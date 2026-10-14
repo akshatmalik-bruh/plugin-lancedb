@@ -1,10 +1,10 @@
 {
-  "name": "plugin-template",
+  "name": "plugin-lancedb",
   "build": {
     "context": ".",
     "dockerfile": "Dockerfile"
   },
-  "workspaceFolder": "/workspaces/plugin-template",
+  "workspaceFolder": "/workspaces/plugin-lancedb",
   "forwardPorts": [8080],
   "customizations": {
     "vscode": {
