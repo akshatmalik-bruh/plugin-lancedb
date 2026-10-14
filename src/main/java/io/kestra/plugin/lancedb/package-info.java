@@ -1,7 +1,10 @@
 @PluginSubGroup(
     title = "LanceDB",
     description = "LanceDB plugin for Kestra",
-    categories = PluginSubGroup.PluginCategory.DATA
+    categories = {
+        PluginSubGroup.PluginCategory.AI,
+        PluginSubGroup.PluginCategory.DATA
+    }
 )
 package io.kestra.plugin.lancedb;
 

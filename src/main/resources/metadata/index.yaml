@@ -1,8 +1,8 @@
 group: io.kestra.plugin.lancedb
 name: "lancedb"
 title: "LanceDB"
-description: "LanceDB plugin for Kestra"
-body: ""
+description: "Tasks for creating vector tables, upserting embeddings, and running similarity searches with LanceDB."
+body: "Integrate Kestra with LanceDB to create and manage vector tables, batch ingest embeddings, and run low-latency similarity searches across local disk, cloud object stores (S3, GCS, Azure), and LanceDB Cloud."
 videos: []
 createdBy: "Kestra Core Team"
 managedBy: "Kestra Core Team"
