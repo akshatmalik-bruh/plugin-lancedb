@@ -2,9 +2,7 @@ package io.kestra.plugin.lancedb;
 
 import io.kestra.core.runners.RunContext;
 import org.apache.arrow.memory.RootAllocator;
-import org.apache.arrow.vector.Float4Vector;
-import org.apache.arrow.vector.VarCharVector;
-import org.apache.arrow.vector.VectorSchemaRoot;
+import org.apache.arrow.vector.*;
 import org.apache.arrow.vector.complex.FixedSizeListVector;
 import org.apache.arrow.vector.ipc.ArrowStreamReader;
 import org.apache.arrow.vector.ipc.ArrowStreamWriter;
@@ -13,6 +11,7 @@ import org.apache.arrow.vector.types.pojo.ArrowType;
 import org.apache.arrow.vector.types.pojo.Field;
 import org.apache.arrow.vector.types.pojo.FieldType;
 import org.apache.arrow.vector.types.pojo.Schema;
+import org.apache.arrow.vector.util.Text;
 import org.lance.Dataset;
 import org.lance.WriteParams;
 import org.lance.ipc.LanceScanner;
@@ -76,6 +75,11 @@ public class NativeLanceClient implements LanceClient {
                      .reader(reader)
                      .execute()) {
                 return dataset != null;
+            } catch (Exception e) {
+                if (!overwrite && e.getMessage() != null && e.getMessage().toLowerCase().contains("already exists")) {
+                    return false;
+                }
+                throw e;
             }
         }
     }
@@ -89,10 +93,56 @@ public class NativeLanceClient implements LanceClient {
         String tableUri = getTableUri(tableName);
         int dimension = extractDimension(records.getFirst());
 
-        Field idField = Field.nullable("id", new ArrowType.Utf8());
+        // Validate all records before building Arrow vectors
+        for (Map<String, Object> rec : records) {
+            extractVector(rec);
+        }
+
+        // Build dynamic schema with id, vector, and all metadata fields
+        List<Field> fields = new ArrayList<>();
+        fields.add(Field.nullable("id", new ArrowType.Utf8()));
+
         Field vectorItemField = Field.nullable("item", new ArrowType.FloatingPoint(FloatingPointPrecision.SINGLE));
-        Field vectorField = new Field("vector", FieldType.nullable(new ArrowType.FixedSizeList(dimension)), List.of(vectorItemField));
-        Schema schema = new Schema(List.of(idField, vectorField));
+        fields.add(new Field("vector", FieldType.nullable(new ArrowType.FixedSizeList(dimension)), List.of(vectorItemField)));
+
+        Map<String, ArrowType> extraFieldTypes = new LinkedHashMap<>();
+        for (Map<String, Object> rec : records) {
+            for (Map.Entry<String, Object> entry : rec.entrySet()) {
+                String key = entry.getKey();
+                if ("id".equals(key) || "vector".equals(key) || "vectors".equals(key) || "_distance".equals(key)) {
+                    continue;
+                }
+                Object val = entry.getValue();
+                if (val != null && !extraFieldTypes.containsKey(key)) {
+                    if (val instanceof Double || val instanceof Float) {
+                        extraFieldTypes.put(key, new ArrowType.FloatingPoint(FloatingPointPrecision.DOUBLE));
+                    } else if (val instanceof Long || val instanceof Integer || val instanceof Short || val instanceof Byte) {
+                        extraFieldTypes.put(key, new ArrowType.Int(64, true));
+                    } else if (val instanceof Boolean) {
+                        extraFieldTypes.put(key, new ArrowType.Bool());
+                    } else {
+                        extraFieldTypes.put(key, new ArrowType.Utf8());
+                    }
+                }
+            }
+        }
+
+        for (Map.Entry<String, ArrowType> entry : extraFieldTypes.entrySet()) {
+            fields.add(Field.nullable(entry.getKey(), entry.getValue()));
+        }
+
+        Schema schema = new Schema(fields);
+
+        // Determine WriteMode
+        WriteParams.WriteMode mode = WriteParams.WriteMode.APPEND;
+        try (RootAllocator checkAlloc = new RootAllocator();
+             Dataset existing = Dataset.open(tableUri, checkAlloc)) {
+            if (existing.countRows() == 0) {
+                mode = WriteParams.WriteMode.OVERWRITE;
+            }
+        } catch (Exception ignored) {
+            mode = WriteParams.WriteMode.CREATE;
+        }
 
         try (RootAllocator allocator = new RootAllocator();
              VectorSchemaRoot root = VectorSchemaRoot.create(schema, allocator)) {
@@ -114,6 +164,23 @@ public class NativeLanceClient implements LanceClient {
                 for (int j = 0; j < dimension; j++) {
                     innerVec.setSafe(i * dimension + j, vector.get(j));
                 }
+
+                for (Map.Entry<String, ArrowType> entry : extraFieldTypes.entrySet()) {
+                    String key = entry.getKey();
+                    Object val = rec.get(key);
+                    if (val != null) {
+                        ValueVector vec = root.getVector(key);
+                        if (vec instanceof VarCharVector vcv) {
+                            vcv.setSafe(i, String.valueOf(val).getBytes(StandardCharsets.UTF_8));
+                        } else if (vec instanceof Float8Vector f8) {
+                            f8.setSafe(i, ((Number) val).doubleValue());
+                        } else if (vec instanceof BigIntVector bi) {
+                            bi.setSafe(i, ((Number) val).longValue());
+                        } else if (vec instanceof BitVector bv) {
+                            bv.setSafe(i, (Boolean) val ? 1 : 0);
+                        }
+                    }
+                }
             }
 
             root.setRowCount(count);
@@ -130,7 +197,7 @@ public class NativeLanceClient implements LanceClient {
                      .allocator(allocator)
                      .uri(tableUri)
                      .schema(schema)
-                     .mode(WriteParams.WriteMode.APPEND)
+                     .mode(mode)
                      .storageOptions(storageOptions)
                      .reader(reader)
                      .execute()) {
@@ -185,6 +252,9 @@ public class NativeLanceClient implements LanceClient {
                         Map<String, Object> row = new LinkedHashMap<>();
                         for (Field field : batchRoot.getSchema().getFields()) {
                             Object val = batchRoot.getVector(field.getName()).getObject(r);
+                            if (val instanceof Text text) {
+                                val = text.toString();
+                            }
                             row.put(field.getName(), val);
                         }
                         results.add(row);
@@ -198,16 +268,21 @@ public class NativeLanceClient implements LanceClient {
     private static List<Float> extractVector(Map<String, Object> map) {
         Object vec = map.get("vector");
         if (vec == null) vec = map.get("vectors");
+        if (vec == null) {
+            return Collections.emptyList();
+        }
         if (vec instanceof List<?> list) {
             List<Float> floats = new ArrayList<>(list.size());
             for (Object item : list) {
                 if (item instanceof Number n) {
                     floats.add(n.floatValue());
+                } else {
+                    throw new IllegalArgumentException("Vector element in record '" + map.get("id") + "' is not a number: " + item);
                 }
             }
             return floats;
         }
-        return Collections.emptyList();
+        throw new IllegalArgumentException("Field 'vector' must be a list of numbers");
     }
 
     private static int extractDimension(Map<String, Object> map) {
