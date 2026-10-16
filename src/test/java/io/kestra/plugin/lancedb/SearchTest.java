@@ -280,4 +280,17 @@ public class SearchTest extends LanceDbTest {
         assertThat(output.getSize(), is(2L));
         assertThat(output.getRows().size(), is(2));
     }
+
+    @Test
+    void runSearchWithInvalidTableNameThrows() {
+        var runContext = runContextFactory.of();
+
+        var searchTask = Search.builder()
+            .uri(Property.ofValue(getDbUri()))
+            .table(Property.ofValue("../../escape"))
+            .vector(Property.ofValue(List.of(0.1, 0.2)))
+            .build();
+
+        assertThrows(IllegalArgumentException.class, () -> searchTask.run(runContext));
+    }
 }

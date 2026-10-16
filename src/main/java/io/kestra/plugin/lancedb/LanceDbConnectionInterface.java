@@ -8,21 +8,9 @@ import java.util.Map;
 public interface LanceDbConnectionInterface {
     @Schema(
         title = "Database URI",
-        description = "Path or URI to the LanceDB database, e.g. local path '/tmp/lancedb', or object store 's3://bucket/path', 'gs://bucket/path', 'az://bucket/path'."
+        description = "Path or URI to the LanceDB database, e.g. local directory '/tmp/lancedb', or object store 's3://bucket/path', 'gs://bucket/path', 'az://bucket/path'."
     )
     Property<String> getUri();
-
-    @Schema(
-        title = "API key",
-        description = "API key for authentication when connecting to secured storage or endpoints."
-    )
-    Property<String> getApiKey();
-
-    @Schema(
-        title = "Database name",
-        description = "Target database or namespace identifier."
-    )
-    Property<String> getDatabase();
 
     @Schema(
         title = "Storage options",

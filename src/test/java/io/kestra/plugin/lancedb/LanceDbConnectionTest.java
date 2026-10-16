@@ -20,12 +20,48 @@ public class LanceDbConnectionTest extends LanceDbTest {
         var runContext = runContextFactory.of();
         assertThrows(
             IllegalArgumentException.class,
-            () -> LanceClientFactory.create(null, null, null, null, runContext)
+            () -> LanceClientFactory.create(null, Collections.emptyMap(), runContext)
         );
         assertThrows(
             IllegalArgumentException.class,
-            () -> LanceClientFactory.create("   ", null, null, null, runContext)
+            () -> LanceClientFactory.create("   ", Collections.emptyMap(), runContext)
         );
+    }
+
+    @Test
+    void testTableNamePathTraversalValidation() {
+        assertThrows(
+            IllegalArgumentException.class,
+            () -> NativeLanceClient.validateTableName("../escape")
+        );
+        assertThrows(
+            IllegalArgumentException.class,
+            () -> NativeLanceClient.validateTableName("sub/dir/table")
+        );
+        assertThrows(
+            IllegalArgumentException.class,
+            () -> NativeLanceClient.validateTableName("sub\\dir\\table")
+        );
+        assertThrows(
+            IllegalArgumentException.class,
+            () -> NativeLanceClient.validateTableName("   ")
+        );
+    }
+
+    @Test
+    void testUnsupportedDbUriAndApiKeyFailFast() {
+        var runContext = runContextFactory.of();
+        var exDb = assertThrows(
+            IllegalArgumentException.class,
+            () -> LanceClientFactory.create("db://project", Collections.emptyMap(), runContext)
+        );
+        assertThat(exDb.getMessage(), containsString("('db://') are not supported"));
+
+        var exApiKey = assertThrows(
+            IllegalArgumentException.class,
+            () -> LanceClientFactory.create(getDbUri(), "my-key", null, Collections.emptyMap(), runContext)
+        );
+        assertThat(exApiKey.getMessage(), containsString("'apiKey' is not supported"));
     }
 
     @Test

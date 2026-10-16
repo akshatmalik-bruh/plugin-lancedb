@@ -30,6 +30,7 @@ import org.lance.ipc.LanceScanner;
 import org.lance.ipc.Query;
 import org.lance.ipc.ScanOptions;
 import org.lance.merge.MergeInsertParams;
+import org.lance.merge.MergeInsertResult;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -37,7 +38,7 @@ import java.nio.channels.Channels;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashSet;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -57,7 +58,19 @@ public class NativeLanceClient implements LanceClient {
         this.runContext = runContext;
     }
 
+    public static void validateTableName(String tableName) {
+        if (tableName == null || tableName.isBlank()) {
+            throw new IllegalArgumentException("'table' cannot be null or empty");
+        }
+        if (tableName.contains("..") || tableName.contains("/") || tableName.contains("\\")) {
+            throw new IllegalArgumentException(
+                "Invalid table name '" + tableName + "': table name cannot contain path separators ('/', '\\') or '..'"
+            );
+        }
+    }
+
     private String getTableUri(String tableName) {
+        validateTableName(tableName);
         String name = tableName.endsWith(".lance") ? tableName : tableName + ".lance";
         return baseUri + "/" + name;
     }
@@ -254,110 +267,138 @@ public class NativeLanceClient implements LanceClient {
         Schema schema = new Schema(fields);
         ObjectMapper objectMapper = JacksonMapper.ofJson();
 
-        boolean tableExists = false;
-        try (RootAllocator checkAlloc = new RootAllocator();
-             Dataset existing = Dataset.open(checkAlloc, tableUri, buildReadOptions())) {
-            tableExists = existing.countRows() > 0;
-        } catch (Exception e) {
-            if (isNotFoundError(e)) {
-                tableExists = false;
-            } else {
-                throw e;
-            }
-        }
+        try (RootAllocator allocator = new RootAllocator()) {
+            Dataset existingDataset = null;
+            boolean tableExists = false;
 
-        try (RootAllocator allocator = new RootAllocator();
-             VectorSchemaRoot root = VectorSchemaRoot.create(schema, allocator)) {
-
-            VarCharVector idVec = (VarCharVector) root.getVector("id");
-            FixedSizeListVector vecList = (FixedSizeListVector) root.getVector("vector");
-            Float4Vector innerVec = (Float4Vector) vecList.getDataVector();
-
-            root.allocateNew();
-            int count = records.size();
-
-            for (int i = 0; i < count; i++) {
-                Map<String, Object> rec = records.get(i);
-                Object id = rec.getOrDefault("id", UUID.randomUUID().toString());
-                idVec.setSafe(i, String.valueOf(id).getBytes(StandardCharsets.UTF_8));
-
-                List<Float> vector = extractVector(rec);
-                vecList.setNotNull(i);
-                for (int j = 0; j < dimension; j++) {
-                    innerVec.setSafe(i * dimension + j, vector.get(j));
+            try {
+                existingDataset = Dataset.open(allocator, tableUri, buildReadOptions());
+                tableExists = true;
+            } catch (Exception e) {
+                if (isNotFoundError(e)) {
+                    tableExists = false;
+                } else {
+                    throw e;
                 }
+            }
 
-                for (Map.Entry<String, ColumnKind> entry : columnKinds.entrySet()) {
-                    String key = entry.getKey();
-                    Object val = rec.get(key);
-                    if (val != null) {
-                        ValueVector vec = root.getVector(key);
-                        switch (entry.getValue()) {
-                            case INT64 -> ((BigIntVector) vec).setSafe(i, ((Number) val).longValue());
-                            case FLOAT64 -> ((Float8Vector) vec).setSafe(i, ((Number) val).doubleValue());
-                            case BOOLEAN -> ((BitVector) vec).setSafe(i, (Boolean) val ? 1 : 0);
-                            case STRING -> ((VarCharVector) vec).setSafe(i, String.valueOf(val).getBytes(StandardCharsets.UTF_8));
-                            case JSON -> {
-                                String jsonStr = objectMapper.writeValueAsString(val);
-                                ((VarCharVector) vec).setSafe(i, jsonStr.getBytes(StandardCharsets.UTF_8));
+            try (VectorSchemaRoot root = VectorSchemaRoot.create(schema, allocator)) {
+                VarCharVector idVec = (VarCharVector) root.getVector("id");
+                FixedSizeListVector vecList = (FixedSizeListVector) root.getVector("vector");
+                Float4Vector innerVec = (Float4Vector) vecList.getDataVector();
+
+                root.allocateNew();
+                int count = records.size();
+
+                for (int i = 0; i < count; i++) {
+                    Map<String, Object> rec = records.get(i);
+                    Object id = rec.getOrDefault("id", UUID.randomUUID().toString());
+                    idVec.setSafe(i, String.valueOf(id).getBytes(StandardCharsets.UTF_8));
+
+                    List<Float> vector = extractVector(rec);
+                    vecList.setNotNull(i);
+                    for (int j = 0; j < dimension; j++) {
+                        innerVec.setSafe(i * dimension + j, vector.get(j));
+                    }
+
+                    for (Map.Entry<String, ColumnKind> entry : columnKinds.entrySet()) {
+                        String key = entry.getKey();
+                        Object val = rec.get(key);
+                        if (val != null) {
+                            ValueVector vec = root.getVector(key);
+                            switch (entry.getValue()) {
+                                case INT64 -> ((BigIntVector) vec).setSafe(i, ((Number) val).longValue());
+                                case FLOAT64 -> ((Float8Vector) vec).setSafe(i, ((Number) val).doubleValue());
+                                case BOOLEAN -> ((BitVector) vec).setSafe(i, (Boolean) val ? 1 : 0);
+                                case STRING -> ((VarCharVector) vec).setSafe(i, String.valueOf(val).getBytes(StandardCharsets.UTF_8));
+                                case JSON -> {
+                                    String jsonStr = objectMapper.writeValueAsString(val);
+                                    ((VarCharVector) vec).setSafe(i, jsonStr.getBytes(StandardCharsets.UTF_8));
+                                }
                             }
                         }
                     }
                 }
-            }
 
-            root.setRowCount(count);
+                root.setRowCount(count);
 
-            ByteArrayOutputStream out = new ByteArrayOutputStream();
-            try (ArrowStreamWriter writer = new ArrowStreamWriter(root, null, Channels.newChannel(out))) {
-                writer.start();
-                writer.writeBatch();
-                writer.end();
-            }
-
-            if (!tableExists) {
-                try (ArrowStreamReader reader = new ArrowStreamReader(new ByteArrayInputStream(out.toByteArray()), allocator);
-                     Dataset dataset = Dataset.write()
-                         .allocator(allocator)
-                         .uri(tableUri)
-                         .schema(schema)
-                         .mode(WriteParams.WriteMode.OVERWRITE)
-                         .storageOptions(storageOptions)
-                         .reader(reader)
-                         .execute()) {
-                    return count;
+                ByteArrayOutputStream out = new ByteArrayOutputStream();
+                try (ArrowStreamWriter writer = new ArrowStreamWriter(root, null, Channels.newChannel(out))) {
+                    writer.start();
+                    writer.writeBatch();
+                    writer.end();
                 }
-            } else {
-                try (ArrowStreamReader reader = new ArrowStreamReader(new ByteArrayInputStream(out.toByteArray()), allocator);
-                     ArrowArrayStream stream = ArrowArrayStream.allocateNew(allocator);
-                     Dataset dataset = Dataset.open(allocator, tableUri, buildReadOptions())) {
 
-                    Schema existingSchema = dataset.getSchema();
-                    Set<String> existingFieldNames = new HashSet<>();
-                    if (existingSchema != null) {
-                        for (Field f : existingSchema.getFields()) {
-                            existingFieldNames.add(f.getName());
+                if (!tableExists) {
+                    try (ArrowStreamReader reader = new ArrowStreamReader(new ByteArrayInputStream(out.toByteArray()), allocator);
+                         Dataset dataset = Dataset.write()
+                             .allocator(allocator)
+                             .uri(tableUri)
+                             .schema(schema)
+                             .mode(WriteParams.WriteMode.CREATE)
+                             .storageOptions(storageOptions)
+                             .reader(reader)
+                             .execute()) {
+                        return count;
+                    }
+                } else {
+                    try {
+                        Schema existingSchema = existingDataset.getSchema();
+                        if (existingSchema != null) {
+                            Field existingVecField = existingSchema.findField("vector");
+                            if (existingVecField != null && existingVecField.getType() instanceof ArrowType.FixedSizeList fsl) {
+                                if (fsl.getListSize() != dimension) {
+                                    throw new IllegalArgumentException(
+                                        "Vector dimension mismatch for table '" + tableName + "': table schema requires "
+                                            + fsl.getListSize() + ", but incoming records have dimension " + dimension
+                                    );
+                                }
+                            }
+
+                            Map<String, ArrowType> existingFieldTypes = new HashMap<>();
+                            for (Field f : existingSchema.getFields()) {
+                                existingFieldTypes.put(f.getName(), f.getType());
+                            }
+
+                            List<Field> missingFields = new ArrayList<>();
+                            for (Field batchField : schema.getFields()) {
+                                String colName = batchField.getName();
+                                if (existingFieldTypes.containsKey(colName)) {
+                                    ArrowType existingType = existingFieldTypes.get(colName);
+                                    ArrowType batchType = batchField.getType();
+                                    if (!existingType.equals(batchType)) {
+                                        throw new IllegalArgumentException(
+                                            "Schema conflict for column '" + colName + "': existing table type is "
+                                                + existingType + ", but incoming batch has type " + batchType
+                                        );
+                                    }
+                                } else {
+                                    missingFields.add(batchField);
+                                }
+                            }
+
+                            if (!missingFields.isEmpty()) {
+                                existingDataset.addColumns(missingFields);
+                            }
                         }
-                    }
 
-                    List<Field> missingFields = new ArrayList<>();
-                    for (Field f : schema.getFields()) {
-                        if (!existingFieldNames.contains(f.getName())) {
-                            missingFields.add(f);
+                        try (ArrowStreamReader reader = new ArrowStreamReader(new ByteArrayInputStream(out.toByteArray()), allocator);
+                             ArrowArrayStream stream = ArrowArrayStream.allocateNew(allocator)) {
+
+                            Data.exportArrayStream(allocator, reader, stream);
+                            MergeInsertParams params = new MergeInsertParams(List.of("id"))
+                                .withMatchedUpdateAll()
+                                .withNotMatched(MergeInsertParams.WhenNotMatched.InsertAll);
+
+                            MergeInsertResult result = existingDataset.mergeInsert(params, stream);
+                            if (result != null && result.dataset() != null) {
+                                result.dataset().close();
+                            }
+                            return count;
                         }
+                    } finally {
+                        existingDataset.close();
                     }
-
-                    if (!missingFields.isEmpty()) {
-                        dataset.addColumns(missingFields);
-                    }
-
-                    Data.exportArrayStream(allocator, reader, stream);
-                    MergeInsertParams params = new MergeInsertParams(List.of("id"))
-                        .withMatchedUpdateAll()
-                        .withNotMatched(MergeInsertParams.WhenNotMatched.InsertAll);
-
-                    dataset.mergeInsert(params, stream);
-                    return count;
                 }
             }
         }

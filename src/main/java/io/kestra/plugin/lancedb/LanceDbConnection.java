@@ -30,26 +30,11 @@ public abstract class LanceDbConnection extends Task implements LanceDbConnectio
 
     @Schema(
         title = "Database URI",
-        description = "Path or URI to the LanceDB database directory or endpoint, e.g. local directory '/tmp/lancedb', cloud object store 's3://my-bucket/lancedb', 'gs://my-bucket/lancedb', or LanceDB Cloud URI."
+        description = "Path or URI to the LanceDB database directory or endpoint, e.g. local directory '/tmp/lancedb', cloud object store 's3://my-bucket/lancedb', 'gs://my-bucket/lancedb', 'az://my-bucket/lancedb'."
     )
     @NotNull
     @PluginProperty(group = "connection")
     protected Property<String> uri;
-
-    @Schema(
-        title = "API key",
-        description = "API key for authenticating with LanceDB Cloud or Enterprise."
-    )
-    @PluginProperty(group = "connection", secret = true)
-    @ToString.Exclude
-    protected Property<String> apiKey;
-
-    @Schema(
-        title = "Database name",
-        description = "Database name or namespace for LanceDB Cloud or Enterprise."
-    )
-    @PluginProperty(group = "connection")
-    protected Property<String> database;
 
     @Schema(
         title = "Storage options",
@@ -62,11 +47,9 @@ public abstract class LanceDbConnection extends Task implements LanceDbConnectio
     public LanceClient buildClient(RunContext runContext) throws Exception {
         String rUri = runContext.render(this.uri).as(String.class)
             .orElseThrow(() -> new IllegalArgumentException("'uri' is required"));
-        String rApiKey = runContext.render(this.apiKey).as(String.class).orElse(null);
-        String rDatabase = runContext.render(this.database).as(String.class).orElse(null);
         Map<String, String> rStorageOptions = renderStorageOptions(runContext);
 
-        return LanceClientFactory.create(rUri, rApiKey, rDatabase, rStorageOptions, runContext);
+        return LanceClientFactory.create(rUri, rStorageOptions, runContext);
     }
 
     protected Map<String, String> renderStorageOptions(RunContext runContext) throws IllegalVariableEvaluationException {

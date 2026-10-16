@@ -90,4 +90,17 @@ public class TableCreateTest extends LanceDbTest {
 
         assertThrows(IllegalArgumentException.class, () -> taskHigh.run(runContext));
     }
+
+    @Test
+    void runWithInvalidTableNameThrows() {
+        var runContext = runContextFactory.of();
+
+        var task = TableCreate.builder()
+            .uri(Property.ofValue(getDbUri()))
+            .table(Property.ofValue("../traversal"))
+            .dimension(Property.ofValue(4))
+            .build();
+
+        assertThrows(IllegalArgumentException.class, () -> task.run(runContext));
+    }
 }

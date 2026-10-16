@@ -320,4 +320,88 @@ public class UpsertTest extends LanceDbTest {
         assertThat(row.get("nested_map").toString(), containsString("\"author\":\"kestra\""));
         assertThat(row.get("nested_list").toString(), containsString("[\"tag1\",\"tag2\"]"));
     }
+
+    @Test
+    void runUpsertPreservesDistanceMetricOnEmptyTable() throws Exception {
+        var runContext = runContextFactory.of();
+
+        TableCreate.builder()
+            .uri(Property.ofValue(getDbUri()))
+            .table(Property.ofValue("l2_preserved"))
+            .dimension(Property.ofValue(2))
+            .distanceMetric(Property.ofValue(DistanceMetric.L2))
+            .build()
+            .run(runContext);
+
+        Upsert.builder()
+            .uri(Property.ofValue(getDbUri()))
+            .table(Property.ofValue("l2_preserved"))
+            .from(Property.ofValue(List.of(
+                Map.of("id", "exact", "vector", List.of(2.0, 3.0)),
+                Map.of("id", "other", "vector", List.of(10.0, 10.0))
+            )))
+            .build()
+            .run(runContext);
+
+        var searchOutput = Search.builder()
+            .uri(Property.ofValue(getDbUri()))
+            .table(Property.ofValue("l2_preserved"))
+            .vector(Property.ofValue(List.of(2.0, 3.0)))
+            .topK(Property.ofValue(1))
+            .fetchType(Property.ofValue(FetchType.FETCH))
+            .build()
+            .run(runContext);
+
+        Map<String, Object> top = (Map<String, Object>) searchOutput.getRows().getFirst();
+        assertThat(top.get("id"), is("exact"));
+        assertThat(((Number) top.get("_distance")).doubleValue(), closeTo(0.0, 0.001));
+    }
+
+    @Test
+    void runUpsertDimensionMismatchAgainstExistingTableThrows() throws Exception {
+        var runContext = runContextFactory.of();
+
+        TableCreate.builder()
+            .uri(Property.ofValue(getDbUri()))
+            .table(Property.ofValue("existing_dim_table"))
+            .dimension(Property.ofValue(3))
+            .build()
+            .run(runContext);
+
+        var upsertTask = Upsert.builder()
+            .uri(Property.ofValue(getDbUri()))
+            .table(Property.ofValue("existing_dim_table"))
+            .from(Property.ofValue(List.of(
+                Map.of("id", "1", "vector", List.of(0.1, 0.2, 0.3, 0.4))
+            )))
+            .build();
+
+        var exception = assertThrows(IllegalArgumentException.class, () -> upsertTask.run(runContext));
+        assertThat(exception.getMessage(), containsString("Vector dimension mismatch for table"));
+    }
+
+    @Test
+    void runUpsertSchemaConflictOnExistingColumnTypeThrows() throws Exception {
+        var runContext = runContextFactory.of();
+
+        Upsert.builder()
+            .uri(Property.ofValue(getDbUri()))
+            .table(Property.ofValue("type_conflict_table"))
+            .from(Property.ofValue(List.of(
+                Map.of("id", "1", "vector", List.of(0.1, 0.2), "category", "electronics")
+            )))
+            .build()
+            .run(runContext);
+
+        var upsertConflicting = Upsert.builder()
+            .uri(Property.ofValue(getDbUri()))
+            .table(Property.ofValue("type_conflict_table"))
+            .from(Property.ofValue(List.of(
+                Map.of("id", "2", "vector", List.of(0.3, 0.4), "category", 12345)
+            )))
+            .build();
+
+        var exception = assertThrows(IllegalArgumentException.class, () -> upsertConflicting.run(runContext));
+        assertThat(exception.getMessage(), containsString("Schema conflict for column 'category'"));
+    }
 }

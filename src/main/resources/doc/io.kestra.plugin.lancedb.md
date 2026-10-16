@@ -2,7 +2,7 @@
 
 Use the LanceDB plugin to create vector tables, ingest embeddings and metadata, and run nearest-neighbor similarity searches against [LanceDB](https://lancedb.com/), an open-source, serverless vector database built on Apache Arrow and the Lance columnar format.
 
-LanceDB enables RAG and multimodal AI workflows without requiring dedicated server infrastructure. The vector index can be stored directly on local disk or cloud object storage (AWS S3, Google Cloud Storage, Azure Blob Storage), as well as in LanceDB Cloud.
+LanceDB enables RAG and multimodal AI workflows without requiring dedicated server infrastructure. The vector index can be stored directly on local disk or cloud object storage (AWS S3, Google Cloud Storage, Azure Blob Storage).
 
 ## Connection
 
@@ -14,8 +14,6 @@ All LanceDB tasks inherit connection properties from `LanceDbConnection`:
   - Google Cloud Storage: `gs://my-bucket/path`
   - Azure Blob Storage: `az://my-bucket/path`
 - `storageOptions`: Map of credentials and connection parameters for cloud object storage (e.g. `aws_access_key_id`, `aws_secret_access_key`, `aws_region`, `endpoint`).
-- `apiKey`: API key for authentication when connecting to secured storage or endpoints (optional, secret).
-- `database`: Database or namespace identifier (optional).
 
 ## Tasks
 
