@@ -1,8 +1,18 @@
 package io.kestra.plugin.lancedb;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.kestra.core.runners.RunContext;
+import io.kestra.core.serializers.JacksonMapper;
+import org.apache.arrow.c.ArrowArrayStream;
+import org.apache.arrow.c.Data;
 import org.apache.arrow.memory.RootAllocator;
-import org.apache.arrow.vector.*;
+import org.apache.arrow.vector.BigIntVector;
+import org.apache.arrow.vector.BitVector;
+import org.apache.arrow.vector.Float4Vector;
+import org.apache.arrow.vector.Float8Vector;
+import org.apache.arrow.vector.ValueVector;
+import org.apache.arrow.vector.VarCharVector;
+import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.arrow.vector.complex.FixedSizeListVector;
 import org.apache.arrow.vector.ipc.ArrowStreamReader;
 import org.apache.arrow.vector.ipc.ArrowStreamWriter;
@@ -13,20 +23,28 @@ import org.apache.arrow.vector.types.pojo.FieldType;
 import org.apache.arrow.vector.types.pojo.Schema;
 import org.apache.arrow.vector.util.Text;
 import org.lance.Dataset;
+import org.lance.ReadOptions;
 import org.lance.WriteParams;
+import org.lance.index.DistanceType;
 import org.lance.ipc.LanceScanner;
 import org.lance.ipc.Query;
 import org.lance.ipc.ScanOptions;
+import org.lance.merge.MergeInsertParams;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.nio.channels.Channels;
 import java.nio.charset.StandardCharsets;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
 
-/**
- * Native JNI-backed Lance client using org.lance.Dataset for high-performance Linux/macOS execution.
- */
 public class NativeLanceClient implements LanceClient {
 
     private final String baseUri;
@@ -44,14 +62,68 @@ public class NativeLanceClient implements LanceClient {
         return baseUri + "/" + name;
     }
 
+    private ReadOptions buildReadOptions() {
+        ReadOptions.Builder builder = new ReadOptions.Builder();
+        if (storageOptions != null && !storageOptions.isEmpty()) {
+            builder.setStorageOptions(storageOptions);
+        }
+        return builder.build();
+    }
+
+    private static boolean isNotFoundError(Throwable t) {
+        while (t != null) {
+            String msg = t.getMessage();
+            if (msg != null) {
+                String lower = msg.toLowerCase();
+                if (lower.contains("not found")
+                    || lower.contains("no such file")
+                    || lower.contains("does not exist")
+                    || lower.contains("not a directory")
+                    || lower.contains("cannot find")
+                    || lower.contains("manifest not found")) {
+                    return true;
+                }
+            }
+            t = t.getCause();
+        }
+        return false;
+    }
+
+    private static boolean isAlreadyExistsException(Throwable t) {
+        while (t != null) {
+            String msg = t.getMessage();
+            if (msg != null && msg.toLowerCase().contains("already exists")) {
+                return true;
+            }
+            t = t.getCause();
+        }
+        return false;
+    }
+
     @Override
     public boolean createTable(String tableName, int dimension, DistanceMetric metric, boolean overwrite) throws Exception {
         String tableUri = getTableUri(tableName);
 
+        if (!overwrite) {
+            try (RootAllocator checkAlloc = new RootAllocator();
+                 Dataset existing = Dataset.open(checkAlloc, tableUri, buildReadOptions())) {
+                return false;
+            } catch (Exception e) {
+                if (!isNotFoundError(e)) {
+                    throw e;
+                }
+            }
+        }
+
         Field idField = Field.nullable("id", new ArrowType.Utf8());
         Field vectorItemField = Field.nullable("item", new ArrowType.FloatingPoint(FloatingPointPrecision.SINGLE));
         Field vectorField = new Field("vector", FieldType.nullable(new ArrowType.FixedSizeList(dimension)), List.of(vectorItemField));
-        Schema schema = new Schema(List.of(idField, vectorField));
+
+        Map<String, String> metadata = new LinkedHashMap<>();
+        if (metric != null) {
+            metadata.put("distance_metric", metric.name());
+        }
+        Schema schema = new Schema(List.of(idField, vectorField), metadata);
 
         try (RootAllocator allocator = new RootAllocator();
              VectorSchemaRoot root = VectorSchemaRoot.create(schema, allocator)) {
@@ -70,18 +142,27 @@ public class NativeLanceClient implements LanceClient {
                      .allocator(allocator)
                      .uri(tableUri)
                      .schema(schema)
+                     .properties(metadata)
                      .mode(overwrite ? WriteParams.WriteMode.OVERWRITE : WriteParams.WriteMode.CREATE)
                      .storageOptions(storageOptions)
                      .reader(reader)
                      .execute()) {
                 return dataset != null;
             } catch (Exception e) {
-                if (!overwrite && e.getMessage() != null && e.getMessage().toLowerCase().contains("already exists")) {
+                if (!overwrite && isAlreadyExistsException(e)) {
                     return false;
                 }
                 throw e;
             }
         }
+    }
+
+    private enum ColumnKind {
+        INT64,
+        FLOAT64,
+        BOOLEAN,
+        STRING,
+        JSON
     }
 
     @Override
@@ -93,55 +174,96 @@ public class NativeLanceClient implements LanceClient {
         String tableUri = getTableUri(tableName);
         int dimension = extractDimension(records.getFirst());
 
-        // Validate all records before building Arrow vectors
         for (Map<String, Object> rec : records) {
-            extractVector(rec);
+            List<Float> vec = extractVector(rec);
+            if (vec.size() != dimension) {
+                throw new IllegalArgumentException(
+                    "Vector dimension mismatch for record '" + rec.get("id") + "': expected " + dimension + ", got " + vec.size()
+                );
+            }
         }
 
-        // Build dynamic schema with id, vector, and all metadata fields
         List<Field> fields = new ArrayList<>();
         fields.add(Field.nullable("id", new ArrowType.Utf8()));
 
         Field vectorItemField = Field.nullable("item", new ArrowType.FloatingPoint(FloatingPointPrecision.SINGLE));
         fields.add(new Field("vector", FieldType.nullable(new ArrowType.FixedSizeList(dimension)), List.of(vectorItemField)));
 
-        Map<String, ArrowType> extraFieldTypes = new LinkedHashMap<>();
+        Set<String> allKeys = new LinkedHashSet<>();
         for (Map<String, Object> rec : records) {
-            for (Map.Entry<String, Object> entry : rec.entrySet()) {
-                String key = entry.getKey();
-                if ("id".equals(key) || "vector".equals(key) || "vectors".equals(key) || "_distance".equals(key)) {
+            for (String key : rec.keySet()) {
+                if (!"id".equals(key) && !"vector".equals(key) && !"vectors".equals(key) && !"_distance".equals(key)) {
+                    allKeys.add(key);
+                }
+            }
+        }
+
+        Map<String, ColumnKind> columnKinds = new LinkedHashMap<>();
+        for (String key : allKeys) {
+            ColumnKind kind = null;
+            for (Map<String, Object> rec : records) {
+                Object val = rec.get(key);
+                if (val == null) {
                     continue;
                 }
-                Object val = entry.getValue();
-                if (val != null && !extraFieldTypes.containsKey(key)) {
-                    if (val instanceof Double || val instanceof Float) {
-                        extraFieldTypes.put(key, new ArrowType.FloatingPoint(FloatingPointPrecision.DOUBLE));
-                    } else if (val instanceof Long || val instanceof Integer || val instanceof Short || val instanceof Byte) {
-                        extraFieldTypes.put(key, new ArrowType.Int(64, true));
-                    } else if (val instanceof Boolean) {
-                        extraFieldTypes.put(key, new ArrowType.Bool());
+
+                ColumnKind valKind;
+                if (val instanceof Double || val instanceof Float) {
+                    valKind = ColumnKind.FLOAT64;
+                } else if (val instanceof Long || val instanceof Integer || val instanceof Short || val instanceof Byte) {
+                    valKind = ColumnKind.INT64;
+                } else if (val instanceof Boolean) {
+                    valKind = ColumnKind.BOOLEAN;
+                } else if (val instanceof Map || val instanceof List) {
+                    valKind = ColumnKind.JSON;
+                } else {
+                    valKind = ColumnKind.STRING;
+                }
+
+                if (kind == null) {
+                    kind = valKind;
+                } else if (kind != valKind) {
+                    if ((kind == ColumnKind.INT64 && valKind == ColumnKind.FLOAT64)
+                        || (kind == ColumnKind.FLOAT64 && valKind == ColumnKind.INT64)) {
+                        kind = ColumnKind.FLOAT64;
                     } else {
-                        extraFieldTypes.put(key, new ArrowType.Utf8());
+                        throw new IllegalArgumentException(
+                            "Conflicting types for metadata column '" + key + "' in record '" + rec.get("id")
+                                + "': cannot unify " + kind + " and " + valKind
+                        );
                     }
                 }
             }
+
+            if (kind == null) {
+                kind = ColumnKind.STRING;
+            }
+            columnKinds.put(key, kind);
         }
 
-        for (Map.Entry<String, ArrowType> entry : extraFieldTypes.entrySet()) {
-            fields.add(Field.nullable(entry.getKey(), entry.getValue()));
+        for (Map.Entry<String, ColumnKind> entry : columnKinds.entrySet()) {
+            ArrowType arrowType = switch (entry.getValue()) {
+                case INT64 -> new ArrowType.Int(64, true);
+                case FLOAT64 -> new ArrowType.FloatingPoint(FloatingPointPrecision.DOUBLE);
+                case BOOLEAN -> new ArrowType.Bool();
+                case STRING, JSON -> new ArrowType.Utf8();
+            };
+            fields.add(Field.nullable(entry.getKey(), arrowType));
         }
 
         Schema schema = new Schema(fields);
+        ObjectMapper objectMapper = JacksonMapper.ofJson();
 
-        // Determine WriteMode
-        WriteParams.WriteMode mode = WriteParams.WriteMode.APPEND;
+        boolean tableExists = false;
         try (RootAllocator checkAlloc = new RootAllocator();
-             Dataset existing = Dataset.open(tableUri, checkAlloc)) {
-            if (existing.countRows() == 0) {
-                mode = WriteParams.WriteMode.OVERWRITE;
+             Dataset existing = Dataset.open(checkAlloc, tableUri, buildReadOptions())) {
+            tableExists = existing.countRows() > 0;
+        } catch (Exception e) {
+            if (isNotFoundError(e)) {
+                tableExists = false;
+            } else {
+                throw e;
             }
-        } catch (Exception ignored) {
-            mode = WriteParams.WriteMode.CREATE;
         }
 
         try (RootAllocator allocator = new RootAllocator();
@@ -165,19 +287,20 @@ public class NativeLanceClient implements LanceClient {
                     innerVec.setSafe(i * dimension + j, vector.get(j));
                 }
 
-                for (Map.Entry<String, ArrowType> entry : extraFieldTypes.entrySet()) {
+                for (Map.Entry<String, ColumnKind> entry : columnKinds.entrySet()) {
                     String key = entry.getKey();
                     Object val = rec.get(key);
                     if (val != null) {
                         ValueVector vec = root.getVector(key);
-                        if (vec instanceof VarCharVector vcv) {
-                            vcv.setSafe(i, String.valueOf(val).getBytes(StandardCharsets.UTF_8));
-                        } else if (vec instanceof Float8Vector f8) {
-                            f8.setSafe(i, ((Number) val).doubleValue());
-                        } else if (vec instanceof BigIntVector bi) {
-                            bi.setSafe(i, ((Number) val).longValue());
-                        } else if (vec instanceof BitVector bv) {
-                            bv.setSafe(i, (Boolean) val ? 1 : 0);
+                        switch (entry.getValue()) {
+                            case INT64 -> ((BigIntVector) vec).setSafe(i, ((Number) val).longValue());
+                            case FLOAT64 -> ((Float8Vector) vec).setSafe(i, ((Number) val).doubleValue());
+                            case BOOLEAN -> ((BitVector) vec).setSafe(i, (Boolean) val ? 1 : 0);
+                            case STRING -> ((VarCharVector) vec).setSafe(i, String.valueOf(val).getBytes(StandardCharsets.UTF_8));
+                            case JSON -> {
+                                String jsonStr = objectMapper.writeValueAsString(val);
+                                ((VarCharVector) vec).setSafe(i, jsonStr.getBytes(StandardCharsets.UTF_8));
+                            }
                         }
                     }
                 }
@@ -192,16 +315,50 @@ public class NativeLanceClient implements LanceClient {
                 writer.end();
             }
 
-            try (ArrowStreamReader reader = new ArrowStreamReader(new ByteArrayInputStream(out.toByteArray()), allocator);
-                 Dataset dataset = Dataset.write()
-                     .allocator(allocator)
-                     .uri(tableUri)
-                     .schema(schema)
-                     .mode(mode)
-                     .storageOptions(storageOptions)
-                     .reader(reader)
-                     .execute()) {
-                return count;
+            if (!tableExists) {
+                try (ArrowStreamReader reader = new ArrowStreamReader(new ByteArrayInputStream(out.toByteArray()), allocator);
+                     Dataset dataset = Dataset.write()
+                         .allocator(allocator)
+                         .uri(tableUri)
+                         .schema(schema)
+                         .mode(WriteParams.WriteMode.OVERWRITE)
+                         .storageOptions(storageOptions)
+                         .reader(reader)
+                         .execute()) {
+                    return count;
+                }
+            } else {
+                try (ArrowStreamReader reader = new ArrowStreamReader(new ByteArrayInputStream(out.toByteArray()), allocator);
+                     ArrowArrayStream stream = ArrowArrayStream.allocateNew(allocator);
+                     Dataset dataset = Dataset.open(allocator, tableUri, buildReadOptions())) {
+
+                    Schema existingSchema = dataset.getSchema();
+                    Set<String> existingFieldNames = new HashSet<>();
+                    if (existingSchema != null) {
+                        for (Field f : existingSchema.getFields()) {
+                            existingFieldNames.add(f.getName());
+                        }
+                    }
+
+                    List<Field> missingFields = new ArrayList<>();
+                    for (Field f : schema.getFields()) {
+                        if (!existingFieldNames.contains(f.getName())) {
+                            missingFields.add(f);
+                        }
+                    }
+
+                    if (!missingFields.isEmpty()) {
+                        dataset.addColumns(missingFields);
+                    }
+
+                    Data.exportArrayStream(allocator, reader, stream);
+                    MergeInsertParams params = new MergeInsertParams(List.of("id"))
+                        .withMatchedUpdateAll()
+                        .withNotMatched(MergeInsertParams.WhenNotMatched.InsertAll);
+
+                    dataset.mergeInsert(params, stream);
+                    return count;
+                }
             }
         }
     }
@@ -222,12 +379,26 @@ public class NativeLanceClient implements LanceClient {
         }
 
         try (RootAllocator allocator = new RootAllocator();
-             Dataset dataset = Dataset.open(tableUri, allocator)) {
+             Dataset dataset = Dataset.open(allocator, tableUri, buildReadOptions())) {
+
+            DistanceType distanceType = DistanceType.Cosine;
+            Map<String, String> meta = dataset.getSchema() != null ? dataset.getSchema().getCustomMetadata() : null;
+            if (meta != null && meta.containsKey("distance_metric")) {
+                String m = meta.get("distance_metric");
+                if ("L2".equalsIgnoreCase(m)) {
+                    distanceType = DistanceType.L2;
+                } else if ("DOT".equalsIgnoreCase(m)) {
+                    distanceType = DistanceType.Dot;
+                } else if ("COSINE".equalsIgnoreCase(m)) {
+                    distanceType = DistanceType.Cosine;
+                }
+            }
 
             Query query = new Query.Builder()
                 .setColumn("vector")
                 .setKey(key)
                 .setK(topK)
+                .setDistanceType(distanceType)
                 .build();
 
             ScanOptions.Builder scanBuilder = new ScanOptions.Builder()

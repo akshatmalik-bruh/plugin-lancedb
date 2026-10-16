@@ -19,9 +19,6 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.URI;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.*;
 
 @SuperBuilder
@@ -58,33 +55,9 @@ public abstract class LanceDbConnection extends Task implements LanceDbConnectio
         title = "Storage options",
         description = "Key-value configuration options for cloud object storage (e.g. AWS access key, secret key, region, endpoint URL)."
     )
-    @PluginProperty(group = "connection")
+    @PluginProperty(group = "connection", secret = true)
+    @ToString.Exclude
     protected Property<Map<String, String>> storageOptions;
-
-    /**
-     * Resolves the full dataset URI for a given table name.
-     */
-    protected String resolveTableUri(String baseUri, String tableName) {
-        String trimmed = baseUri.replaceAll("[/\\\\]+$", "");
-        String tableWithExt = tableName.endsWith(".lance") ? tableName : tableName + ".lance";
-        String tableDirect = tableName;
-
-        // Check if local path
-        if (!trimmed.contains("://")) {
-            Path pExt = Paths.get(trimmed, tableWithExt);
-            if (Files.exists(pExt)) {
-                return pExt.toAbsolutePath().toString().replace('\\', '/');
-            }
-            Path pDirect = Paths.get(trimmed, tableDirect);
-            if (Files.exists(pDirect)) {
-                return pDirect.toAbsolutePath().toString().replace('\\', '/');
-            }
-            return pExt.toAbsolutePath().toString().replace('\\', '/');
-        }
-
-        // Object storage URI (s3://, gs://, etc.)
-        return trimmed + "/" + tableWithExt;
-    }
 
     public LanceClient buildClient(RunContext runContext) throws Exception {
         String rUri = runContext.render(this.uri).as(String.class)

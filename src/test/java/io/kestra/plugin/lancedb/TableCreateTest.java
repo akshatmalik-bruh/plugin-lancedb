@@ -74,12 +74,20 @@ public class TableCreateTest extends LanceDbTest {
     void runWithInvalidDimension() {
         var runContext = runContextFactory.of();
 
-        var task = TableCreate.builder()
+        var taskLow = TableCreate.builder()
             .uri(Property.ofValue(getDbUri()))
             .table(Property.ofValue("invalid"))
             .dimension(Property.ofValue(0))
             .build();
 
-        assertThrows(IllegalArgumentException.class, () -> task.run(runContext));
+        assertThrows(IllegalArgumentException.class, () -> taskLow.run(runContext));
+
+        var taskHigh = TableCreate.builder()
+            .uri(Property.ofValue(getDbUri()))
+            .table(Property.ofValue("invalid_high"))
+            .dimension(Property.ofValue(70000))
+            .build();
+
+        assertThrows(IllegalArgumentException.class, () -> taskHigh.run(runContext));
     }
 }

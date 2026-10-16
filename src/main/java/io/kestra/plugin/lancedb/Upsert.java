@@ -41,6 +41,10 @@ import java.util.concurrent.atomic.AtomicLong;
                     uri: "s3://my-bucket/lancedb"
                     table: documents
                     from: "{{ outputs.embed.uri }}"
+                    storageOptions:
+                      aws_access_key_id: "{{ secret('AWS_ACCESS_KEY_ID') }}"
+                      aws_secret_access_key: "{{ secret('AWS_SECRET_ACCESS_KEY') }}"
+                      region: "us-east-1"
                 """
         ),
         @Example(
@@ -81,12 +85,11 @@ public class Upsert extends LanceDbConnection implements RunnableTask<Upsert.Out
 
     @Schema(
         title = "Records to upsert",
-        description = "Data source, either an inline list of maps or a Kestra storage URI to an ION/JSON file. Each record should contain a 'vector' list of numbers and optional metadata fields.",
-        anyOf = {String.class, List.class, Map.class}
+        description = "Data source, either an inline list of maps or a Kestra storage URI to an ION/JSON file. Each record should contain a 'vector' list of numbers and optional metadata fields."
     )
     @NotNull
-    @PluginProperty(group = "main", dynamic = true)
-    private Object from;
+    @PluginProperty(group = "main")
+    private Property<Object> from;
 
     @Schema(
         title = "Batch size",
@@ -100,6 +103,8 @@ public class Upsert extends LanceDbConnection implements RunnableTask<Upsert.Out
     public Output run(RunContext runContext) throws Exception {
         var rTable = runContext.render(this.table).as(String.class)
             .orElseThrow(() -> new IllegalArgumentException("'table' is required"));
+        var rFrom = runContext.render(this.from).as(Object.class)
+            .orElseThrow(() -> new IllegalArgumentException("'from' is required"));
         var rBatchSize = runContext.render(this.batchSize).as(Integer.class).orElse(1000);
         validateRange("batchSize", rBatchSize, 1, 100000);
 
@@ -108,7 +113,7 @@ public class Upsert extends LanceDbConnection implements RunnableTask<Upsert.Out
         AtomicLong totalUpserted = new AtomicLong();
 
         try (var client = buildClient(runContext)) {
-            Data.from(this.from)
+            Data.from(rFrom)
                 .read(runContext)
                 .buffer(rBatchSize)
                 .concatMap(batch -> Mono.fromCallable(() -> {

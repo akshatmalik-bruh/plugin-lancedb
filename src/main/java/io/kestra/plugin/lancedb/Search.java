@@ -44,6 +44,10 @@ import java.util.Map;
                     topK: 5
                     filter: "category = 'docs'"
                     fetchType: FETCH
+                    storageOptions:
+                      aws_access_key_id: "{{ secret('AWS_ACCESS_KEY_ID') }}"
+                      aws_secret_access_key: "{{ secret('AWS_SECRET_ACCESS_KEY') }}"
+                      region: "us-east-1"
 
                   - id: log_results
                     type: io.kestra.plugin.core.log.Log

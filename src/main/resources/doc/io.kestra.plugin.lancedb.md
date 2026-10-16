@@ -8,15 +8,14 @@ LanceDB enables RAG and multimodal AI workflows without requiring dedicated serv
 
 All LanceDB tasks inherit connection properties from `LanceDbConnection`:
 
-- `uri`: The database path or endpoint (required). Supported formats include:
+- `uri`: The database path or object storage URI (required). Supported formats include:
   - Local filesystem path: `/path/to/lancedb` or `file:///path/to/lancedb`
   - Amazon S3: `s3://my-bucket/path`
   - Google Cloud Storage: `gs://my-bucket/path`
   - Azure Blob Storage: `az://my-bucket/path`
-  - LanceDB Cloud: `db://<project-name>` or `https://<project>.<region>.api.lancedb.com`
-- `apiKey`: API key for authenticating with LanceDB Cloud or Enterprise (optional, secret).
-- `database`: Database or namespace identifier for cloud deployments (optional).
-- `storageOptions`: Map of credentials and connection parameters for object storage (e.g. `aws_access_key_id`, `aws_secret_access_key`, `aws_region`, `endpoint`).
+- `storageOptions`: Map of credentials and connection parameters for cloud object storage (e.g. `aws_access_key_id`, `aws_secret_access_key`, `aws_region`, `endpoint`).
+- `apiKey`: API key for authentication when connecting to secured storage or endpoints (optional, secret).
+- `database`: Database or namespace identifier (optional).
 
 ## Tasks
 

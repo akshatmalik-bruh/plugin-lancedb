@@ -36,7 +36,7 @@ public class SearchTest extends LanceDbTest {
         Upsert.builder()
             .uri(Property.ofValue(getDbUri()))
             .table(Property.ofValue("articles"))
-            .from(records)
+            .from(Property.ofValue(records))
             .build()
             .run(runContext);
 
@@ -78,7 +78,7 @@ public class SearchTest extends LanceDbTest {
         Upsert.builder()
             .uri(Property.ofValue(getDbUri()))
             .table(Property.ofValue("projected_docs"))
-            .from(records)
+            .from(Property.ofValue(records))
             .build()
             .run(runContext);
 
@@ -118,7 +118,7 @@ public class SearchTest extends LanceDbTest {
         Upsert.builder()
             .uri(Property.ofValue(getDbUri()))
             .table(Property.ofValue("empty_matches"))
-            .from(List.of(Map.of("id", "1", "vector", List.of(0.1, 0.2), "status", "active")))
+            .from(Property.ofValue(List.of(Map.of("id", "1", "vector", List.of(0.1, 0.2), "status", "active"))))
             .build()
             .run(runContext);
 
@@ -149,10 +149,10 @@ public class SearchTest extends LanceDbTest {
         Upsert.builder()
             .uri(Property.ofValue(getDbUri()))
             .table(Property.ofValue("l2_docs"))
-            .from(List.of(
+            .from(Property.ofValue(List.of(
                 Map.of("id", "exact", "vector", List.of(1.0, 1.0)),
                 Map.of("id", "far", "vector", List.of(10.0, 10.0))
-            ))
+            )))
             .build()
             .run(runContext);
 
@@ -213,7 +213,7 @@ public class SearchTest extends LanceDbTest {
         Upsert.builder()
             .uri(Property.ofValue(getDbUri()))
             .table(Property.ofValue("modes"))
-            .from(records)
+            .from(Property.ofValue(records))
             .build()
             .run(runContext);
 
@@ -262,7 +262,7 @@ public class SearchTest extends LanceDbTest {
         Upsert.builder()
             .uri(Property.ofValue(getDbUri()))
             .table(Property.ofValue("limit_precedence"))
-            .from(records)
+            .from(Property.ofValue(records))
             .build()
             .run(runContext);
 

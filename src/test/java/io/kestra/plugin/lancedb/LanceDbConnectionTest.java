@@ -16,21 +16,16 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 public class LanceDbConnectionTest extends LanceDbTest {
 
     @Test
-    void testResolveTableUri() {
-        var task = TableCreate.builder()
-            .uri(Property.ofValue("/tmp/lancedb"))
-            .table(Property.ofValue("my_table"))
-            .dimension(Property.ofValue(128))
-            .build();
-
-        String localResolved = task.resolveTableUri("/tmp/lancedb/", "my_table");
-        assertThat(localResolved, containsString("my_table.lance"));
-
-        String s3Resolved = task.resolveTableUri("s3://bucket/data/", "my_table");
-        assertThat(s3Resolved, is("s3://bucket/data/my_table.lance"));
-
-        String s3WithExt = task.resolveTableUri("s3://bucket/data", "already.lance");
-        assertThat(s3WithExt, is("s3://bucket/data/already.lance"));
+    void testFactoryValidation() {
+        var runContext = runContextFactory.of();
+        assertThrows(
+            IllegalArgumentException.class,
+            () -> LanceClientFactory.create(null, null, null, null, runContext)
+        );
+        assertThrows(
+            IllegalArgumentException.class,
+            () -> LanceClientFactory.create("   ", null, null, null, runContext)
+        );
     }
 
     @Test

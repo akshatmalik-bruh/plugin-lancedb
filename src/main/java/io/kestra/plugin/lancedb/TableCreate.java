@@ -23,7 +23,7 @@ import lombok.experimental.SuperBuilder;
 @Plugin(
     examples = {
         @Example(
-            title = "Create a LanceDB table with 1536 dimensions and Cosine distance",
+            title = "Create a LanceDB table with 1536 dimensions and Cosine distance in S3",
             full = true,
             code = """
                 id: lancedb_table_create
@@ -36,6 +36,10 @@ import lombok.experimental.SuperBuilder;
                     table: documents
                     dimension: 1536
                     distanceMetric: COSINE
+                    storageOptions:
+                      aws_access_key_id: "{{ secret('AWS_ACCESS_KEY_ID') }}"
+                      aws_secret_access_key: "{{ secret('AWS_SECRET_ACCESS_KEY') }}"
+                      region: "us-east-1"
                 """
         ),
         @Example(
@@ -69,7 +73,7 @@ public class TableCreate extends LanceDbConnection implements RunnableTask<Table
 
     @Schema(
         title = "Vector dimension",
-        description = "The dimension size of vectors to be stored in the table (e.g. 1536 for OpenAI embeddings, 384 for MiniLM)."
+        description = "The dimension size of vectors to be stored in the table (1 to 65536, e.g. 1536 for OpenAI embeddings, 384 for MiniLM)."
     )
     @NotNull
     @PluginProperty(group = "main")
@@ -98,7 +102,7 @@ public class TableCreate extends LanceDbConnection implements RunnableTask<Table
             .orElseThrow(() -> new IllegalArgumentException("'table' is required"));
         var rDimension = runContext.render(this.dimension).as(Integer.class)
             .orElseThrow(() -> new IllegalArgumentException("'dimension' is required"));
-        validateRange("dimension", rDimension, 1, Integer.MAX_VALUE);
+        validateRange("dimension", rDimension, 1, 65536);
         var rDistanceMetric = runContext.render(this.distanceMetric).as(DistanceMetric.class)
             .orElse(DistanceMetric.COSINE);
         var rOverwrite = runContext.render(this.overwrite).as(Boolean.class).orElse(false);

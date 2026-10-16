@@ -21,7 +21,7 @@ Single-module plugin. Source packages under `io.kestra.plugin`:
 
 Infrastructure dependencies:
 
-- Embedded local disk / cloud object storage (S3, GCS, Azure) or LanceDB Cloud REST endpoint.
+- Embedded local disk / cloud object storage (S3, GCS, Azure).
 
 ### Key Plugin Classes
 
@@ -44,11 +44,10 @@ plugin-lancedb/
 |   |-- Search.java
 |   |-- LanceClient.java
 |   |-- LanceClientFactory.java
-|   |-- EmbeddedLocalLanceClient.java
-|   |-- NativeLanceClient.java
-|   \-- RestLanceClient.java
+|   \-- NativeLanceClient.java
 |-- src/test/java/io/kestra/plugin/lancedb/
 |   |-- LanceDbTest.java
+|   |-- LanceDbConnectionTest.java
 |   |-- TableCreateTest.java
 |   |-- UpsertTest.java
 |   \-- SearchTest.java
