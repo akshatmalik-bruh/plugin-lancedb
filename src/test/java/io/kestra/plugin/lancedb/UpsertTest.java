@@ -337,24 +337,31 @@ public class UpsertTest extends LanceDbTest {
             .uri(Property.ofValue(getDbUri()))
             .table(Property.ofValue("l2_preserved"))
             .from(Property.ofValue(List.of(
-                Map.of("id", "exact", "vector", List.of(2.0, 3.0)),
-                Map.of("id", "other", "vector", List.of(10.0, 10.0))
+                Map.of("id", "v1", "vector", List.of(3.0, 0.0)),
+                Map.of("id", "v2", "vector", List.of(0.0, 4.0))
             )))
             .build()
             .run(runContext);
 
+        // Verify distance_metric metadata survived the first upsert into the empty table
+        try (var alloc = new org.apache.arrow.memory.RootAllocator();
+             var ds = org.lance.Dataset.open(getDbUri() + "/l2_preserved.lance", alloc)) {
+            assertThat(ds.getSchema().getCustomMetadata().get("distance_metric"), is("L2"));
+        }
+
+        // Query with [6.0, 0.0] points in same direction as [3.0, 0.0] (cosine distance would be 0.0, but L2 distance is 9.0)
         var searchOutput = Search.builder()
             .uri(Property.ofValue(getDbUri()))
             .table(Property.ofValue("l2_preserved"))
-            .vector(Property.ofValue(List.of(2.0, 3.0)))
+            .vector(Property.ofValue(List.of(6.0, 0.0)))
             .topK(Property.ofValue(1))
             .fetchType(Property.ofValue(FetchType.FETCH))
             .build()
             .run(runContext);
 
         Map<String, Object> top = (Map<String, Object>) searchOutput.getRows().getFirst();
-        assertThat(top.get("id"), is("exact"));
-        assertThat(((Number) top.get("_distance")).doubleValue(), closeTo(0.0, 0.001));
+        assertThat(top.get("id"), is("v1"));
+        assertThat(((Number) top.get("_distance")).doubleValue(), closeTo(9.0, 0.001));
     }
 
     @Test

@@ -46,6 +46,31 @@ public class LanceDbConnectionTest extends LanceDbTest {
             IllegalArgumentException.class,
             () -> NativeLanceClient.validateTableName("   ")
         );
+        assertThrows(
+            IllegalArgumentException.class,
+            () -> NativeLanceClient.validateTableName("%2e%2e%2fescape")
+        );
+        assertThrows(
+            IllegalArgumentException.class,
+            () -> NativeLanceClient.validateTableName("table\0null")
+        );
+        assertThrows(
+            IllegalArgumentException.class,
+            () -> NativeLanceClient.validateTableName("table name")
+        );
+        assertThrows(
+            IllegalArgumentException.class,
+            () -> NativeLanceClient.validateTableName("..")
+        );
+        assertThrows(
+            IllegalArgumentException.class,
+            () -> NativeLanceClient.validateTableName(".")
+        );
+
+        // Valid table names should not throw
+        org.junit.jupiter.api.Assertions.assertDoesNotThrow(() -> NativeLanceClient.validateTableName("valid_table"));
+        org.junit.jupiter.api.Assertions.assertDoesNotThrow(() -> NativeLanceClient.validateTableName("valid-table-123"));
+        org.junit.jupiter.api.Assertions.assertDoesNotThrow(() -> NativeLanceClient.validateTableName("valid_table.lance"));
     }
 
     @Test

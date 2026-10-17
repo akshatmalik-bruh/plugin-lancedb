@@ -54,7 +54,7 @@ dependencies {
     implementation "org.lance:lance-core:13.1.0-beta.2"
     implementation "org.apache.arrow:arrow-vector:18.3.0"
     implementation "org.apache.arrow:arrow-c-data:18.3.0"
-    implementation "org.apache.arrow:arrow-memory-netty:18.3.0"
+    implementation "org.apache.arrow:arrow-memory-unsafe:18.3.0"
 }
 
 
