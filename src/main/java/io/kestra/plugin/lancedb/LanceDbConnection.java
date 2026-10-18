@@ -45,9 +45,9 @@ public abstract class LanceDbConnection extends Task implements LanceDbConnectio
     protected Property<Map<String, String>> storageOptions;
 
     public LanceClient buildClient(RunContext runContext) throws Exception {
-        String rUri = runContext.render(this.uri).as(String.class)
+        var rUri = runContext.render(this.uri).as(String.class)
             .orElseThrow(() -> new IllegalArgumentException("'uri' is required"));
-        Map<String, String> rStorageOptions = renderStorageOptions(runContext);
+        var rStorageOptions = renderStorageOptions(runContext);
 
         return LanceClientFactory.create(rUri, rStorageOptions, runContext);
     }

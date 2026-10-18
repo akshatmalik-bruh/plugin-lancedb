@@ -242,12 +242,12 @@ public class SearchTest extends LanceDbTest {
     }
 
     @Test
-    void runSearchWithLimitPrecedence() throws Exception {
+    void runSearchUsesTopK() throws Exception {
         var runContext = runContextFactory.of();
 
         TableCreate.builder()
             .uri(Property.ofValue(getDbUri()))
-            .table(Property.ofValue("limit_precedence"))
+            .table(Property.ofValue("top_k"))
             .dimension(Property.ofValue(2))
             .build()
             .run(runContext);
@@ -261,18 +261,17 @@ public class SearchTest extends LanceDbTest {
 
         Upsert.builder()
             .uri(Property.ofValue(getDbUri()))
-            .table(Property.ofValue("limit_precedence"))
+            .table(Property.ofValue("top_k"))
             .from(Property.ofValue(records))
             .build()
             .run(runContext);
 
-        // topK is 4, but limit is 2 -> limit takes precedence
+        // topK determines the maximum number of returned results.
         var searchTask = Search.builder()
             .uri(Property.ofValue(getDbUri()))
-            .table(Property.ofValue("limit_precedence"))
+            .table(Property.ofValue("top_k"))
             .vector(Property.ofValue(List.of(0.1, 0.1)))
-            .topK(Property.ofValue(4))
-            .limit(Property.ofValue(2))
+            .topK(Property.ofValue(2))
             .fetchType(Property.ofValue(FetchType.FETCH))
             .build();
 

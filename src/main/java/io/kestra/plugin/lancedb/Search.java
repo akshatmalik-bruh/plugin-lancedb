@@ -15,7 +15,6 @@ import lombok.experimental.SuperBuilder;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 @SuperBuilder
 @ToString
@@ -77,7 +76,9 @@ public class Search extends LanceDbConnection implements RunnableTask<FetchOutpu
 
     @Schema(
         title = "Table name",
-        description = "The name of the LanceDB table to search in."
+        description = """
+            The name of the LanceDB table to search in.
+            """
     )
     @NotNull
     @PluginProperty(group = "main")
@@ -85,7 +86,9 @@ public class Search extends LanceDbConnection implements RunnableTask<FetchOutpu
 
     @Schema(
         title = "Query vector",
-        description = "Dense vector embedding to search for nearest neighbors."
+        description = """
+            Dense vector embedding to search for nearest neighbors.
+            """
     )
     @NotNull
     @PluginProperty(group = "main")
@@ -93,51 +96,42 @@ public class Search extends LanceDbConnection implements RunnableTask<FetchOutpu
 
     @Schema(
         title = "Top-K results",
-        description = "Maximum number of nearest neighbor results to return (default: 10). If `limit` is also provided, `limit` takes precedence."
+        description = """
+            Maximum number of nearest neighbor results to return, between 1 and 100000 (default: 10).
+            """
     )
     @Builder.Default
     @PluginProperty(group = "main")
     private Property<Integer> topK = Property.ofValue(10);
 
     @Schema(
-        title = "Limit",
-        description = "Maximum number of nearest neighbor results to return. If specified, takes precedence over `topK`."
-    )
-    @PluginProperty(group = "main")
-    private Property<Integer> limit;
-
-    @Schema(
         title = "Metadata filter",
-        description = "SQL filter expression for metadata pre-filtering (e.g. `category = 'docs' AND rating > 4`)."
+        description = """
+            SQL filter expression for metadata pre-filtering (e.g. `category = 'docs' AND rating > 4`).
+            """
     )
     @PluginProperty(group = "main")
     private Property<String> filter;
 
     @Schema(
         title = "Columns to project",
-        description = "Optional list of columns to return in result rows. Default returns all columns."
+        description = """
+            Optional list of columns to return in result rows. Default returns all columns.
+            """
     )
     @PluginProperty(group = "main")
     private Property<List<String>> columns;
 
     @Schema(
         title = "Fetch type",
-        description = "The way results should be fetched: FETCH_ONE (single map row), FETCH (in-memory list of rows), or STORE (write to Kestra storage URI)."
+        description = """
+            The way results should be fetched: FETCH_ONE (single map row), FETCH (in-memory list of rows), or STORE (write to Kestra storage URI).
+            """
     )
     @NotNull
     @Builder.Default
     @PluginProperty(group = "processing")
     private Property<FetchType> fetchType = Property.ofValue(FetchType.FETCH);
-
-    public Integer resolveLimit(RunContext runContext) throws Exception {
-        if (this.limit != null) {
-            var rLimit = runContext.render(this.limit).as(Integer.class);
-            if (rLimit.isPresent()) {
-                return rLimit.get();
-            }
-        }
-        return runContext.render(this.topK).as(Integer.class).orElse(10);
-    }
 
     @Override
     public FetchOutput run(RunContext runContext) throws Exception {
@@ -157,17 +151,17 @@ public class Search extends LanceDbConnection implements RunnableTask<FetchOutpu
             }
         }
 
-        var rLimit = resolveLimit(runContext);
-        validateRange("limit", rLimit, 1, 100000);
+        var rTopK = runContext.render(this.topK).as(Integer.class).orElse(10);
+        validateRange("topK", rTopK, 1, 100000);
 
         var rFilter = runContext.render(this.filter).as(String.class).orElse(null);
         var rColumns = runContext.render(this.columns).asList(String.class);
         var rFetchType = runContext.render(this.fetchType).as(FetchType.class).orElse(FetchType.FETCH);
 
-        runContext.logger().info("Searching LanceDB table '{}' for nearest {} vectors (fetchType: {})", rTable, rLimit, rFetchType);
+        runContext.logger().info("Searching LanceDB table '{}' for nearest {} vectors (fetchType: {})", rTable, rTopK, rFetchType);
 
         try (var client = buildClient(runContext)) {
-            List<Map<String, Object>> results = client.search(rTable, floats, rLimit, rFilter, rColumns);
+            var results = client.search(rTable, floats, rTopK, rFilter, rColumns);
             runContext.logger().info("LanceDB search returned {} results", results.size());
 
             return buildFetchOutput(runContext, rFetchType, results);

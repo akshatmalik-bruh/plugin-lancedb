@@ -93,7 +93,9 @@ public class Upsert extends LanceDbConnection implements RunnableTask<Upsert.Out
 
     @Schema(
         title = "Batch size",
-        description = "The number of records to write in each batch (default: 1000)."
+        description = """
+            Number of records written per batch, between 1 and 100000 (default: 1000).
+            """
     )
     @Builder.Default
     @PluginProperty(group = "processing")
@@ -110,7 +112,7 @@ public class Upsert extends LanceDbConnection implements RunnableTask<Upsert.Out
 
         runContext.logger().info("Upserting records into LanceDB table '{}' with batch size {}", rTable, rBatchSize);
 
-        AtomicLong totalUpserted = new AtomicLong();
+        var totalUpserted = new AtomicLong();
 
         try (var client = buildClient(runContext)) {
             Data.from(rFrom)

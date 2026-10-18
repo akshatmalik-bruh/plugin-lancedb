@@ -3,7 +3,9 @@ package io.kestra.plugin.lancedb;
 import io.kestra.core.models.property.Property;
 import io.kestra.core.models.tasks.common.FetchType;
 import io.kestra.core.serializers.FileSerde;
+import org.apache.arrow.memory.RootAllocator;
 import org.junit.jupiter.api.Test;
+import org.lance.Dataset;
 import reactor.core.publisher.Flux;
 
 import java.io.File;
@@ -344,8 +346,8 @@ public class UpsertTest extends LanceDbTest {
             .run(runContext);
 
         // Verify distance_metric metadata survived the first upsert into the empty table
-        try (var alloc = new org.apache.arrow.memory.RootAllocator();
-             var ds = org.lance.Dataset.open(getDbUri() + "/l2_preserved.lance", alloc)) {
+        try (var alloc = new RootAllocator();
+             var ds = Dataset.open(getDbUri() + "/l2_preserved.lance", alloc)) {
             assertThat(ds.getSchema().getCustomMetadata().get("distance_metric"), is("L2"));
         }
 

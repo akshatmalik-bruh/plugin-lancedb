@@ -11,6 +11,7 @@ import java.util.Map;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 public class LanceDbConnectionTest extends LanceDbTest {
@@ -68,9 +69,9 @@ public class LanceDbConnectionTest extends LanceDbTest {
         );
 
         // Valid table names should not throw
-        org.junit.jupiter.api.Assertions.assertDoesNotThrow(() -> NativeLanceClient.validateTableName("valid_table"));
-        org.junit.jupiter.api.Assertions.assertDoesNotThrow(() -> NativeLanceClient.validateTableName("valid-table-123"));
-        org.junit.jupiter.api.Assertions.assertDoesNotThrow(() -> NativeLanceClient.validateTableName("valid_table.lance"));
+        assertDoesNotThrow(() -> NativeLanceClient.validateTableName("valid_table"));
+        assertDoesNotThrow(() -> NativeLanceClient.validateTableName("valid-table-123"));
+        assertDoesNotThrow(() -> NativeLanceClient.validateTableName("valid_table.lance"));
     }
 
     @Test

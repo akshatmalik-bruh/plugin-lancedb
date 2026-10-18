@@ -25,7 +25,6 @@ import org.apache.arrow.vector.util.Text;
 import org.lance.Dataset;
 import org.lance.ReadOptions;
 import org.lance.WriteParams;
-import org.lance.index.DistanceType;
 import org.lance.ipc.LanceScanner;
 import org.lance.ipc.Query;
 import org.lance.ipc.ScanOptions;
@@ -45,6 +44,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -56,7 +56,6 @@ public class NativeLanceClient implements LanceClient {
 
     private final String baseUri;
     private final Map<String, String> storageOptions;
-    private final RunContext runContext;
     private final RootAllocator allocator;
     private Dataset activeDataset;
     private String activeTableUri;
@@ -64,7 +63,6 @@ public class NativeLanceClient implements LanceClient {
     public NativeLanceClient(String baseUri, Map<String, String> storageOptions, RunContext runContext) {
         this.baseUri = baseUri.replaceAll("[/\\\\]+$", "");
         this.storageOptions = storageOptions != null ? storageOptions : Collections.emptyMap();
-        this.runContext = runContext;
         this.allocator = new RootAllocator();
     }
 
@@ -114,7 +112,7 @@ public class NativeLanceClient implements LanceClient {
     }
 
     private ReadOptions buildReadOptions() {
-        ReadOptions.Builder builder = new ReadOptions.Builder();
+        var builder = new ReadOptions.Builder();
         if (storageOptions != null && !storageOptions.isEmpty()) {
             builder.setStorageOptions(storageOptions);
         }
@@ -181,7 +179,7 @@ public class NativeLanceClient implements LanceClient {
         if (metric != null) {
             metadata.put("distance_metric", metric.name());
         }
-        Schema schema = new Schema(List.of(idField, vectorField), metadata);
+        var schema = new Schema(List.of(idField, vectorField), metadata);
 
         try (VectorSchemaRoot root = VectorSchemaRoot.create(schema, allocator)) {
             root.allocateNew();
@@ -199,7 +197,6 @@ public class NativeLanceClient implements LanceClient {
                      .allocator(allocator)
                      .uri(tableUri)
                      .schema(schema)
-                     .properties(metadata)
                      .mode(overwrite ? WriteParams.WriteMode.OVERWRITE : WriteParams.WriteMode.CREATE)
                      .storageOptions(storageOptions)
                      .reader(reader)
@@ -308,8 +305,8 @@ public class NativeLanceClient implements LanceClient {
             fields.add(Field.nullable(entry.getKey(), arrowType));
         }
 
-        Schema schema = new Schema(fields);
-        ObjectMapper objectMapper = JacksonMapper.ofJson();
+        var schema = new Schema(fields);
+        var objectMapper = JacksonMapper.ofJson();
 
         if (activeDataset != null && !tableUri.equals(activeTableUri)) {
             closeActiveDataset();
@@ -446,7 +443,7 @@ public class NativeLanceClient implements LanceClient {
 
                     MergeInsertResult result = activeDataset.mergeInsert(params, stream);
                     if (result != null && result.dataset() != null) {
-                        Dataset updated = result.dataset();
+                        var updated = result.dataset();
                         activeDataset.close();
                         activeDataset = updated;
                     }
@@ -481,16 +478,13 @@ public class NativeLanceClient implements LanceClient {
         }
 
         try {
-            DistanceType distanceType = DistanceType.Cosine;
+            var distanceMetric = DistanceMetric.COSINE;
             Map<String, String> meta = datasetToUse.getSchema() != null ? datasetToUse.getSchema().getCustomMetadata() : null;
             if (meta != null && meta.containsKey("distance_metric")) {
-                String m = meta.get("distance_metric");
-                if ("L2".equalsIgnoreCase(m)) {
-                    distanceType = DistanceType.L2;
-                } else if ("DOT".equalsIgnoreCase(m)) {
-                    distanceType = DistanceType.Dot;
-                } else if ("COSINE".equalsIgnoreCase(m)) {
-                    distanceType = DistanceType.Cosine;
+                try {
+                    distanceMetric = DistanceMetric.valueOf(String.valueOf(meta.get("distance_metric")).toUpperCase(Locale.ROOT));
+                } catch (IllegalArgumentException ignored) {
+                    // Keep COSINE as the fallback for missing or unknown metadata values.
                 }
             }
 
@@ -498,7 +492,7 @@ public class NativeLanceClient implements LanceClient {
                 .setColumn("vector")
                 .setKey(key)
                 .setK(topK)
-                .setDistanceType(distanceType)
+                .setDistanceType(distanceMetric.toLance())
                 .build();
 
             ScanOptions.Builder scanBuilder = new ScanOptions.Builder()

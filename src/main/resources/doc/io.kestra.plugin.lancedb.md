@@ -34,7 +34,7 @@ Batch inserts or updates vector records and metadata into an existing LanceDB ta
 - `from`: Data source containing records. Accepts:
   - An inline list of maps, where each map includes a `vector` list of floating point numbers and arbitrary metadata fields.
   - A Kestra storage URI (`kestra://...`) pointing to an ION or JSON file (e.g. output from an embedding task).
-- `batchSize`: Number of records to stream and write per batch (default: `1000`).
+- `batchSize`: Number of records written per batch, between `1` and `100000` (default: `1000`).
 
 ### `Search`
 
@@ -42,8 +42,7 @@ Performs approximate nearest neighbor (ANN) vector similarity search with option
 
 - `table`: Target table to search in.
 - `vector`: Dense embedding vector to query with.
-- `limit`: Maximum number of nearest neighbors to retrieve. If specified, takes precedence over `topK`.
-- `topK`: Maximum number of nearest neighbors to retrieve (default: `10`). Used when `limit` is omitted.
+- `topK`: Maximum number of nearest neighbors to retrieve, between `1` and `100000` (default: `10`).
 - `filter`: Optional SQL filter expression evaluated against metadata (e.g. `category = 'docs' AND rating > 4.0`).
 - `columns`: Optional projection list of column names to return.
 - `fetchType`: Output delivery format:
