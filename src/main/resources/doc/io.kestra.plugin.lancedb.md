@@ -1,12 +1,16 @@
-# LanceDB Plugin
+# How to use the LanceDB plugin
 
 Use the LanceDB plugin to create vector tables, ingest embeddings and metadata, and run nearest-neighbor similarity searches against [LanceDB](https://lancedb.com/), an open-source, serverless vector database built on Apache Arrow and the Lance columnar format.
 
 LanceDB enables RAG and multimodal AI workflows without requiring dedicated server infrastructure. The vector index can be stored directly on local disk or cloud object storage (AWS S3, Google Cloud Storage, Azure Blob Storage).
 
-## Connection
+## Authentication
 
-All LanceDB tasks inherit connection properties from `LanceDbConnection`:
+All LanceDB tasks inherit connection properties from `LanceDbConnection`. The `storageOptions` property can contain credentials for cloud object storage and is treated as secret. Supply sensitive values using Kestra's `{{ secret('SECRET_NAME') }}` syntax. See the [Secrets documentation](https://kestra.io/docs/concepts/secret).
+
+For shared plugin configuration and defaults, see [Plugin defaults](https://kestra.io/docs/workflow-components/plugin-defaults).
+
+Connection properties:
 
 - `uri`: The database path or object storage URI (required). Supported formats include:
   - Local filesystem path: `/path/to/lancedb` or `file:///path/to/lancedb`

@@ -14,10 +14,8 @@ import lombok.*;
 import lombok.experimental.SuperBuilder;
 import reactor.core.publisher.Flux;
 
-import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.OutputStream;
 import java.net.URI;
 import java.util.*;
 
@@ -30,7 +28,9 @@ public abstract class LanceDbConnection extends Task implements LanceDbConnectio
 
     @Schema(
         title = "Database URI",
-        description = "Path or URI to the LanceDB database directory or endpoint, e.g. local directory '/tmp/lancedb', cloud object store 's3://my-bucket/lancedb', 'gs://my-bucket/lancedb', 'az://my-bucket/lancedb'."
+        description = """
+            Path or URI to the LanceDB database directory or endpoint, e.g. local directory '/tmp/lancedb', cloud object store 's3://my-bucket/lancedb', 'gs://my-bucket/lancedb', 'az://my-bucket/lancedb'.
+            """
     )
     @NotNull
     @PluginProperty(group = "connection")
@@ -38,7 +38,9 @@ public abstract class LanceDbConnection extends Task implements LanceDbConnectio
 
     @Schema(
         title = "Storage options",
-        description = "Key-value configuration options for cloud object storage (e.g. AWS access key, secret key, region, endpoint URL)."
+        description = """
+            Key-value configuration options for cloud object storage (e.g. AWS access key, secret key, region, endpoint URL).
+            """
     )
     @PluginProperty(group = "connection", secret = true)
     @ToString.Exclude
@@ -49,15 +51,15 @@ public abstract class LanceDbConnection extends Task implements LanceDbConnectio
             .orElseThrow(() -> new IllegalArgumentException("'uri' is required"));
         var rStorageOptions = renderStorageOptions(runContext);
 
-        return LanceClientFactory.create(rUri, rStorageOptions, runContext);
+        return LanceClientFactory.create(rUri, rStorageOptions);
     }
 
     protected Map<String, String> renderStorageOptions(RunContext runContext) throws IllegalVariableEvaluationException {
         if (this.storageOptions == null) {
             return Collections.emptyMap();
         }
-        var rendered = runContext.render(this.storageOptions).asMap(String.class, String.class);
-        return rendered != null ? rendered : Collections.emptyMap();
+        var rStorageOptions = runContext.render(this.storageOptions).asMap(String.class, String.class);
+        return rStorageOptions != null ? rStorageOptions : Collections.emptyMap();
     }
 
     protected static void validateRange(String property, int value, int min, int max) {
@@ -67,8 +69,8 @@ public abstract class LanceDbConnection extends Task implements LanceDbConnectio
     }
 
     public static URI store(RunContext runContext, List<Map<String, Object>> rows) throws IOException {
-        File tempFile = runContext.workingDir().createTempFile(".ion").toFile();
-        try (OutputStream output = new FileOutputStream(tempFile)) {
+        var tempFile = runContext.workingDir().createTempFile(".ion").toFile();
+        try (var output = new FileOutputStream(tempFile)) {
             FileSerde.writeAll(output, Flux.fromIterable(rows)).block();
             output.flush();
         }
@@ -80,7 +82,7 @@ public abstract class LanceDbConnection extends Task implements LanceDbConnectio
         FetchType fetchType,
         List<Map<String, Object>> rows
     ) throws IOException {
-        FetchOutput.FetchOutputBuilder builder = FetchOutput.builder();
+        var builder = FetchOutput.builder();
         return switch (fetchType) {
             case FETCH_ONE -> builder
                 .size(rows.isEmpty() ? 0L : 1L)
@@ -91,7 +93,7 @@ public abstract class LanceDbConnection extends Task implements LanceDbConnectio
                 .rows(new ArrayList<>(rows))
                 .build();
             case STORE -> {
-                URI uri = store(runContext, rows);
+                var uri = store(runContext, rows);
                 yield builder
                     .size((long) rows.size())
                     .uri(uri)

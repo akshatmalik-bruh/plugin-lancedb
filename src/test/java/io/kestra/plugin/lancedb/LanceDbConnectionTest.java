@@ -18,14 +18,13 @@ public class LanceDbConnectionTest extends LanceDbTest {
 
     @Test
     void testFactoryValidation() {
-        var runContext = runContextFactory.of();
         assertThrows(
             IllegalArgumentException.class,
-            () -> LanceClientFactory.create(null, Collections.emptyMap(), runContext)
+            () -> LanceClientFactory.create(null, Collections.emptyMap())
         );
         assertThrows(
             IllegalArgumentException.class,
-            () -> LanceClientFactory.create("   ", Collections.emptyMap(), runContext)
+            () -> LanceClientFactory.create("   ", Collections.emptyMap())
         );
     }
 
@@ -75,19 +74,13 @@ public class LanceDbConnectionTest extends LanceDbTest {
     }
 
     @Test
-    void testUnsupportedDbUriAndApiKeyFailFast() {
-        var runContext = runContextFactory.of();
+    void testUnsupportedDbUriFailsFast() {
         var exDb = assertThrows(
             IllegalArgumentException.class,
-            () -> LanceClientFactory.create("db://project", Collections.emptyMap(), runContext)
+            () -> LanceClientFactory.create("db://project", Collections.emptyMap())
         );
         assertThat(exDb.getMessage(), containsString("('db://') are not supported"));
 
-        var exApiKey = assertThrows(
-            IllegalArgumentException.class,
-            () -> LanceClientFactory.create(getDbUri(), "my-key", null, Collections.emptyMap(), runContext)
-        );
-        assertThat(exApiKey.getMessage(), containsString("'apiKey' is not supported"));
     }
 
     @Test

@@ -1,16 +1,12 @@
 package io.kestra.plugin.lancedb;
 
-import io.kestra.core.runners.RunContext;
-
 import java.util.Map;
 
-// Factory for creating LanceClient instances backed by official Lance Java SDK (org.lance:lance-core).
 public class LanceClientFactory {
 
     public static LanceClient create(
         String baseUri,
-        Map<String, String> storageOptions,
-        RunContext runContext
+        Map<String, String> storageOptions
     ) {
         if (baseUri == null || baseUri.isBlank()) {
             throw new IllegalArgumentException("'uri' cannot be null or empty");
@@ -28,28 +24,11 @@ public class LanceClientFactory {
             );
         }
 
-        return new NativeLanceClient(baseUri, storageOptions, runContext);
-    }
-
-    @Deprecated
-    public static LanceClient create(
-        String baseUri,
-        String apiKey,
-        String database,
-        Map<String, String> storageOptions,
-        RunContext runContext
-    ) {
-        if (apiKey != null && !apiKey.isBlank()) {
-            throw new IllegalArgumentException("'apiKey' is not supported. Use 'storageOptions' for cloud storage credentials.");
-        }
-        if (database != null && !database.isBlank()) {
-            throw new IllegalArgumentException("'database' is not supported. Use 'uri' to specify the table directory or bucket path.");
-        }
-        return create(baseUri, storageOptions, runContext);
+        return new NativeLanceClient(baseUri, storageOptions);
     }
 
     public static boolean isNativeSupported() {
-        String os = System.getProperty("os.name", "").toLowerCase();
+        var os = System.getProperty("os.name", "").toLowerCase();
         // The lance-core package bundles native JNI binaries for Linux and macOS only
         if (os.contains("win")) {
             return false;

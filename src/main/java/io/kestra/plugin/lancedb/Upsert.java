@@ -24,7 +24,9 @@ import java.util.concurrent.atomic.AtomicLong;
 @NoArgsConstructor
 @Schema(
     title = "Upsert vector records into a LanceDB table",
-    description = "Inserts or updates vector records and metadata into a LanceDB table. Accepts inline record lists or Kestra internal storage files."
+    description = """
+        Inserts or updates vector records and metadata into a LanceDB table. Accepts inline record lists or Kestra internal storage files.
+        """
 )
 @Plugin(
     examples = {
@@ -77,7 +79,9 @@ public class Upsert extends LanceDbConnection implements RunnableTask<Upsert.Out
 
     @Schema(
         title = "Table name",
-        description = "The name of the LanceDB table to upsert records into."
+        description = """
+            The name of the LanceDB table to upsert records into.
+            """
     )
     @NotNull
     @PluginProperty(group = "main")
@@ -85,7 +89,9 @@ public class Upsert extends LanceDbConnection implements RunnableTask<Upsert.Out
 
     @Schema(
         title = "Records to upsert",
-        description = "Data source, either an inline list of maps or a Kestra storage URI to an ION/JSON file. Each record should contain a 'vector' list of numbers and optional metadata fields."
+        description = """
+            Data source, either an inline list of maps or a Kestra storage URI to an ION/JSON file. Each record should contain a 'vector' list of numbers and optional metadata fields.
+            """
     )
     @NotNull
     @PluginProperty(group = "main")
@@ -119,7 +125,7 @@ public class Upsert extends LanceDbConnection implements RunnableTask<Upsert.Out
                 .read(runContext)
                 .buffer(rBatchSize)
                 .concatMap(batch -> Mono.fromCallable(() -> {
-                    long count = client.upsert(rTable, batch);
+                    var count = client.upsert(rTable, batch);
                     totalUpserted.addAndGet(count);
                     runContext.logger().debug("Upserted batch of {} records", count);
                     return count;
@@ -139,7 +145,9 @@ public class Upsert extends LanceDbConnection implements RunnableTask<Upsert.Out
     public static class Output implements io.kestra.core.models.tasks.Output {
         @Schema(
             title = "Record count",
-            description = "The total count of records successfully upserted into the table."
+            description = """
+                The total count of records successfully upserted into the table.
+                """
         )
         private final long count;
     }

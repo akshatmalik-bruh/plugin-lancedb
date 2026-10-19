@@ -29,7 +29,6 @@ import org.lance.ipc.LanceScanner;
 import org.lance.ipc.Query;
 import org.lance.ipc.ScanOptions;
 import org.lance.merge.MergeInsertParams;
-import org.lance.merge.MergeInsertResult;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -60,7 +59,7 @@ public class NativeLanceClient implements LanceClient {
     private Dataset activeDataset;
     private String activeTableUri;
 
-    public NativeLanceClient(String baseUri, Map<String, String> storageOptions, RunContext runContext) {
+    public NativeLanceClient(String baseUri, Map<String, String> storageOptions) {
         this.baseUri = baseUri.replaceAll("[/\\\\]+$", "");
         this.storageOptions = storageOptions != null ? storageOptions : Collections.emptyMap();
         this.allocator = new RootAllocator();
@@ -79,7 +78,7 @@ public class NativeLanceClient implements LanceClient {
 
     private String getTableUri(String tableName) {
         validateTableName(tableName);
-        String name = tableName.endsWith(".lance") ? tableName : tableName + ".lance";
+        var name = tableName.endsWith(".lance") ? tableName : tableName + ".lance";
         return baseUri + "/" + name;
     }
 
@@ -121,9 +120,9 @@ public class NativeLanceClient implements LanceClient {
 
     private static boolean isNotFoundError(Throwable t) {
         while (t != null) {
-            String msg = t.getMessage();
+            var msg = t.getMessage();
             if (msg != null) {
-                String lower = msg.toLowerCase();
+                var lower = msg.toLowerCase();
                 if (lower.contains("not found")
                     || lower.contains("no such file")
                     || lower.contains("does not exist")
@@ -140,7 +139,7 @@ public class NativeLanceClient implements LanceClient {
 
     private static boolean isAlreadyExistsException(Throwable t) {
         while (t != null) {
-            String msg = t.getMessage();
+            var msg = t.getMessage();
             if (msg != null && msg.toLowerCase().contains("already exists")) {
                 return true;
             }
@@ -151,7 +150,7 @@ public class NativeLanceClient implements LanceClient {
 
     @Override
     public boolean createTable(String tableName, int dimension, DistanceMetric metric, boolean overwrite) throws Exception {
-        String tableUri = getTableUri(tableName);
+        var tableUri = getTableUri(tableName);
 
         if (!overwrite) {
             if (isLocalUri(tableUri)) {
@@ -159,7 +158,7 @@ public class NativeLanceClient implements LanceClient {
                     return false;
                 }
             } else {
-                try (Dataset existing = Dataset.open(allocator, tableUri, buildReadOptions())) {
+                try (var existing = Dataset.open(allocator, tableUri, buildReadOptions())) {
                     return false;
                 } catch (Exception e) {
                     if (!isNotFoundError(e)) {
@@ -171,11 +170,11 @@ public class NativeLanceClient implements LanceClient {
 
         closeActiveDataset();
 
-        Field idField = Field.nullable("id", new ArrowType.Utf8());
-        Field vectorItemField = Field.nullable("item", new ArrowType.FloatingPoint(FloatingPointPrecision.SINGLE));
-        Field vectorField = new Field("vector", FieldType.nullable(new ArrowType.FixedSizeList(dimension)), List.of(vectorItemField));
+        var idField = Field.nullable("id", new ArrowType.Utf8());
+        var vectorItemField = Field.nullable("item", new ArrowType.FloatingPoint(FloatingPointPrecision.SINGLE));
+        var vectorField = new Field("vector", FieldType.nullable(new ArrowType.FixedSizeList(dimension)), List.of(vectorItemField));
 
-        Map<String, String> metadata = new LinkedHashMap<>();
+        var metadata = new LinkedHashMap<String, String>();
         if (metric != null) {
             metadata.put("distance_metric", metric.name());
         }
@@ -185,7 +184,7 @@ public class NativeLanceClient implements LanceClient {
             root.allocateNew();
             root.setRowCount(0);
 
-            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            var out = new ByteArrayOutputStream();
             try (ArrowStreamWriter writer = new ArrowStreamWriter(root, null, Channels.newChannel(out))) {
                 writer.start();
                 writer.writeBatch();
@@ -193,7 +192,7 @@ public class NativeLanceClient implements LanceClient {
             }
 
             try (ArrowStreamReader reader = new ArrowStreamReader(new ByteArrayInputStream(out.toByteArray()), allocator);
-                 Dataset dataset = Dataset.write()
+                 var dataset = Dataset.write()
                      .allocator(allocator)
                      .uri(tableUri)
                      .schema(schema)
@@ -225,11 +224,11 @@ public class NativeLanceClient implements LanceClient {
             return 0L;
         }
 
-        String tableUri = getTableUri(tableName);
-        int dimension = extractDimension(records.getFirst());
+        var tableUri = getTableUri(tableName);
+        var dimension = extractDimension(records.getFirst());
 
         for (Map<String, Object> rec : records) {
-            List<Float> vec = extractVector(rec);
+            var vec = extractVector(rec);
             if (vec.size() != dimension) {
                 throw new IllegalArgumentException(
                     "Vector dimension mismatch for record '" + rec.get("id") + "': expected " + dimension + ", got " + vec.size()
@@ -237,10 +236,10 @@ public class NativeLanceClient implements LanceClient {
             }
         }
 
-        List<Field> fields = new ArrayList<>();
+        var fields = new ArrayList<Field>();
         fields.add(Field.nullable("id", new ArrowType.Utf8()));
 
-        Field vectorItemField = Field.nullable("item", new ArrowType.FloatingPoint(FloatingPointPrecision.SINGLE));
+        var vectorItemField = Field.nullable("item", new ArrowType.FloatingPoint(FloatingPointPrecision.SINGLE));
         fields.add(new Field("vector", FieldType.nullable(new ArrowType.FixedSizeList(dimension)), List.of(vectorItemField)));
 
         Set<String> allKeys = new LinkedHashSet<>();
@@ -252,7 +251,7 @@ public class NativeLanceClient implements LanceClient {
             }
         }
 
-        Map<String, ColumnKind> columnKinds = new LinkedHashMap<>();
+        var columnKinds = new LinkedHashMap<String, ColumnKind>();
         for (String key : allKeys) {
             ColumnKind kind = null;
             for (Map<String, Object> rec : records) {
@@ -339,21 +338,21 @@ public class NativeLanceClient implements LanceClient {
             Float4Vector innerVec = (Float4Vector) vecList.getDataVector();
 
             root.allocateNew();
-            int count = records.size();
+            var count = records.size();
 
             for (int i = 0; i < count; i++) {
-                Map<String, Object> rec = records.get(i);
+                var rec = records.get(i);
                 Object id = rec.getOrDefault("id", UUID.randomUUID().toString());
                 idVec.setSafe(i, String.valueOf(id).getBytes(StandardCharsets.UTF_8));
 
-                List<Float> vector = extractVector(rec);
+                var vector = extractVector(rec);
                 vecList.setNotNull(i);
                 for (int j = 0; j < dimension; j++) {
                     innerVec.setSafe(i * dimension + j, vector.get(j));
                 }
 
                 for (Map.Entry<String, ColumnKind> entry : columnKinds.entrySet()) {
-                    String key = entry.getKey();
+                    var key = entry.getKey();
                     Object val = rec.get(key);
                     if (val != null) {
                         ValueVector vec = root.getVector(key);
@@ -363,7 +362,7 @@ public class NativeLanceClient implements LanceClient {
                             case BOOLEAN -> ((BitVector) vec).setSafe(i, (Boolean) val ? 1 : 0);
                             case STRING -> ((VarCharVector) vec).setSafe(i, String.valueOf(val).getBytes(StandardCharsets.UTF_8));
                             case JSON -> {
-                                String jsonStr = objectMapper.writeValueAsString(val);
+                                var jsonStr = objectMapper.writeValueAsString(val);
                                 ((VarCharVector) vec).setSafe(i, jsonStr.getBytes(StandardCharsets.UTF_8));
                             }
                         }
@@ -373,7 +372,7 @@ public class NativeLanceClient implements LanceClient {
 
             root.setRowCount(count);
 
-            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            var out = new ByteArrayOutputStream();
             try (ArrowStreamWriter writer = new ArrowStreamWriter(root, null, Channels.newChannel(out))) {
                 writer.start();
                 writer.writeBatch();
@@ -394,9 +393,9 @@ public class NativeLanceClient implements LanceClient {
                     return count;
                 }
             } else {
-                Schema existingSchema = activeDataset.getSchema();
+                var existingSchema = activeDataset.getSchema();
                 if (existingSchema != null) {
-                    Field existingVecField = existingSchema.findField("vector");
+                    var existingVecField = existingSchema.findField("vector");
                     if (existingVecField != null && existingVecField.getType() instanceof ArrowType.FixedSizeList fsl) {
                         if (fsl.getListSize() != dimension) {
                             throw new IllegalArgumentException(
@@ -406,14 +405,14 @@ public class NativeLanceClient implements LanceClient {
                         }
                     }
 
-                    Map<String, ArrowType> existingFieldTypes = new HashMap<>();
+                    var existingFieldTypes = new HashMap<String, ArrowType>();
                     for (Field f : existingSchema.getFields()) {
                         existingFieldTypes.put(f.getName(), f.getType());
                     }
 
-                    List<Field> missingFields = new ArrayList<>();
+                    var missingFields = new ArrayList<Field>();
                     for (Field batchField : schema.getFields()) {
-                        String colName = batchField.getName();
+                        var colName = batchField.getName();
                         if (existingFieldTypes.containsKey(colName)) {
                             ArrowType existingType = existingFieldTypes.get(colName);
                             ArrowType batchType = batchField.getType();
@@ -441,7 +440,7 @@ public class NativeLanceClient implements LanceClient {
                         .withMatchedUpdateAll()
                         .withNotMatched(MergeInsertParams.WhenNotMatched.InsertAll);
 
-                    MergeInsertResult result = activeDataset.mergeInsert(params, stream);
+                    var result = activeDataset.mergeInsert(params, stream);
                     if (result != null && result.dataset() != null) {
                         var updated = result.dataset();
                         activeDataset.close();
@@ -461,15 +460,15 @@ public class NativeLanceClient implements LanceClient {
         String filter,
         List<String> columns
     ) throws Exception {
-        String tableUri = getTableUri(tableName);
+        var tableUri = getTableUri(tableName);
 
-        float[] key = new float[queryVector.size()];
+        var key = new float[queryVector.size()];
         for (int i = 0; i < queryVector.size(); i++) {
             key[i] = queryVector.get(i);
         }
 
         Dataset datasetToUse = null;
-        boolean closeDatasetAfterSearch = false;
+        var closeDatasetAfterSearch = false;
         if (activeDataset != null && tableUri.equals(activeTableUri)) {
             datasetToUse = activeDataset;
         } else {
@@ -479,7 +478,7 @@ public class NativeLanceClient implements LanceClient {
 
         try {
             var distanceMetric = DistanceMetric.COSINE;
-            Map<String, String> meta = datasetToUse.getSchema() != null ? datasetToUse.getSchema().getCustomMetadata() : null;
+            var meta = datasetToUse.getSchema() != null ? datasetToUse.getSchema().getCustomMetadata() : null;
             if (meta != null && meta.containsKey("distance_metric")) {
                 try {
                     distanceMetric = DistanceMetric.valueOf(String.valueOf(meta.get("distance_metric")).toUpperCase(Locale.ROOT));
@@ -488,14 +487,14 @@ public class NativeLanceClient implements LanceClient {
                 }
             }
 
-            Query query = new Query.Builder()
+            var query = new Query.Builder()
                 .setColumn("vector")
                 .setKey(key)
                 .setK(topK)
                 .setDistanceType(distanceMetric.toLance())
                 .build();
 
-            ScanOptions.Builder scanBuilder = new ScanOptions.Builder()
+            var scanBuilder = new ScanOptions.Builder()
                 .nearest(query)
                 .limit(topK);
 
@@ -506,15 +505,15 @@ public class NativeLanceClient implements LanceClient {
                 scanBuilder.columns(columns);
             }
 
-            List<Map<String, Object>> results = new ArrayList<>();
+            var results = new ArrayList<Map<String, Object>>();
             try (LanceScanner scanner = datasetToUse.newScan(scanBuilder.build());
                  var reader = scanner.scanBatches()) {
                 while (reader.loadNextBatch()) {
                     VectorSchemaRoot batchRoot = reader.getVectorSchemaRoot();
-                    int rowCount = batchRoot.getRowCount();
+                    var rowCount = batchRoot.getRowCount();
 
                     for (int r = 0; r < rowCount; r++) {
-                        Map<String, Object> row = new LinkedHashMap<>();
+                        var row = new LinkedHashMap<String, Object>();
                         for (Field field : batchRoot.getSchema().getFields()) {
                             Object val = batchRoot.getVector(field.getName()).getObject(r);
                             if (val instanceof Text text) {
@@ -541,7 +540,7 @@ public class NativeLanceClient implements LanceClient {
             return Collections.emptyList();
         }
         if (vec instanceof List<?> list) {
-            List<Float> floats = new ArrayList<>(list.size());
+            var floats = new ArrayList<Float>(list.size());
             for (Object item : list) {
                 if (item instanceof Number n) {
                     floats.add(n.floatValue());
@@ -555,7 +554,7 @@ public class NativeLanceClient implements LanceClient {
     }
 
     private static int extractDimension(Map<String, Object> map) {
-        List<Float> vec = extractVector(map);
+        var vec = extractVector(map);
         if (vec.isEmpty()) {
             throw new IllegalArgumentException("Record must contain a non-empty 'vector' list");
         }

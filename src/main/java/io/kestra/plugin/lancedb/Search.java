@@ -23,7 +23,9 @@ import java.util.List;
 @NoArgsConstructor
 @Schema(
     title = "Search nearest vectors in a LanceDB table",
-    description = "Searches for nearest neighbor vectors in a LanceDB table with optional SQL metadata filtering. Returns results inline or stores them in Kestra internal storage."
+    description = """
+        Searches for nearest neighbor vectors in a LanceDB table with optional SQL metadata filtering. Returns results inline or stores them in Kestra internal storage.
+        """
 )
 @Plugin(
     examples = {
@@ -110,7 +112,7 @@ public class Search extends LanceDbConnection implements RunnableTask<FetchOutpu
             SQL filter expression for metadata pre-filtering (e.g. `category = 'docs' AND rating > 4`).
             """
     )
-    @PluginProperty(group = "main")
+    @PluginProperty(group = "processing")
     private Property<String> filter;
 
     @Schema(
@@ -119,7 +121,7 @@ public class Search extends LanceDbConnection implements RunnableTask<FetchOutpu
             Optional list of columns to return in result rows. Default returns all columns.
             """
     )
-    @PluginProperty(group = "main")
+    @PluginProperty(group = "processing")
     private Property<List<String>> columns;
 
     @Schema(

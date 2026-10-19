@@ -18,7 +18,9 @@ import lombok.experimental.SuperBuilder;
 @NoArgsConstructor
 @Schema(
     title = "Create a table in LanceDB",
-    description = "Initializes a new vector table in LanceDB with the specified vector dimension and distance metric."
+    description = """
+        Initializes a new vector table in LanceDB with the specified vector dimension and distance metric.
+        """
 )
 @Plugin(
     examples = {
@@ -65,7 +67,9 @@ public class TableCreate extends LanceDbConnection implements RunnableTask<Table
 
     @Schema(
         title = "Table name",
-        description = "The name of the LanceDB table to create."
+        description = """
+            The name of the LanceDB table to create.
+            """
     )
     @NotNull
     @PluginProperty(group = "main")
@@ -73,7 +77,9 @@ public class TableCreate extends LanceDbConnection implements RunnableTask<Table
 
     @Schema(
         title = "Vector dimension",
-        description = "The dimension size of vectors to be stored in the table (1 to 65536, e.g. 1536 for OpenAI embeddings, 384 for MiniLM)."
+        description = """
+            The dimension size of vectors to be stored in the table (1 to 65536, e.g. 1536 for OpenAI embeddings, 384 for MiniLM).
+            """
     )
     @NotNull
     @PluginProperty(group = "main")
@@ -81,7 +87,10 @@ public class TableCreate extends LanceDbConnection implements RunnableTask<Table
 
     @Schema(
         title = "Distance metric",
-        description = "The distance metric to use for vector comparisons (COSINE, L2, DOT). Default is COSINE."
+        description = """
+            Distance metric for vector comparisons: COSINE (cosine distance, recommended for normalized embeddings),
+            L2 (squared Euclidean distance), or DOT (dot product distance). Default is COSINE.
+            """
     )
     @NotNull
     @Builder.Default
@@ -90,7 +99,9 @@ public class TableCreate extends LanceDbConnection implements RunnableTask<Table
 
     @Schema(
         title = "Overwrite table if it already exists",
-        description = "Whether to overwrite the table if it already exists (default: false)."
+        description = """
+            Whether to overwrite the table if it already exists (default: false).
+            """
     )
     @Builder.Default
     @PluginProperty(group = "advanced")
@@ -110,7 +121,7 @@ public class TableCreate extends LanceDbConnection implements RunnableTask<Table
         runContext.logger().info("Creating LanceDB table '{}' with dimension {} and metric {}", rTable, rDimension, rDistanceMetric);
 
         try (var client = buildClient(runContext)) {
-            boolean created = client.createTable(rTable, rDimension, rDistanceMetric, rOverwrite);
+            var created = client.createTable(rTable, rDimension, rDistanceMetric, rOverwrite);
             runContext.logger().info("Table '{}' created: {}", rTable, created);
 
             return Output.builder()
@@ -127,25 +138,33 @@ public class TableCreate extends LanceDbConnection implements RunnableTask<Table
     public static class Output implements io.kestra.core.models.tasks.Output {
         @Schema(
             title = "Table name",
-            description = "The name of the table that was created."
+            description = """
+                The name of the table that was created.
+                """
         )
         private final String table;
 
         @Schema(
             title = "Vector dimension",
-            description = "The dimension size of the vectors."
+            description = """
+                The dimension size of the vectors.
+                """
         )
         private final Integer dimension;
 
         @Schema(
             title = "Distance metric",
-            description = "The distance metric configured on the table."
+            description = """
+                The distance metric configured on the table.
+                """
         )
         private final DistanceMetric distanceMetric;
 
         @Schema(
             title = "Created status",
-            description = "Whether a new table was created (false if already existed and overwrite was false)."
+            description = """
+                Whether a new table was created (false if already existed and overwrite was false).
+                """
         )
         private final Boolean created;
     }
